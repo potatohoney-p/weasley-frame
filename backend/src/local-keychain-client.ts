@@ -1,4 +1,4 @@
-﻿import { env } from "./env.js";
+import { env } from "./env.js";
 import {
   type LocalCredentialService,
   localKeychainAccount,
@@ -112,7 +112,7 @@ async function keychainRequest<T>(
 export function expectedKeychainAccount(
   service: LocalCredentialService,
 ): string {
-  return localKeychainAccount(env.honey-frame_LOCAL_WORKSPACE_ID, service);
+  return localKeychainAccount(env.WEASLEY_FRAME_LOCAL_WORKSPACE_ID, service);
 }
 
 export async function getKeychainCredential(

@@ -38,9 +38,42 @@ if (!command) {
   process.exit(2);
 }
 
-const child = spawn(command, args, {
+function commandForPlatform(value, commandArgs) {
+  if (
+    process.platform !== "win32" ||
+    value.toLowerCase() === "node" ||
+    /[\\/]/.test(value)
+  ) {
+    return { executable: value, args: commandArgs };
+  }
+
+  // Windows cannot spawn npm's `.cmd` shims directly without a command shell.
+  // Resolve the package's declared Node bin instead, preserving argv boundaries
+  // and avoiding shell interpolation entirely.
+  const packageDir = resolve(process.cwd(), "node_modules", value);
+  const packageJsonPath = resolve(packageDir, "package.json");
+  if (!existsSync(packageJsonPath)) {
+    throw new Error(`Cannot resolve local executable '${value}' from ${process.cwd()}.`);
+  }
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  const declaredBin = packageJson.bin;
+  const binPath =
+    typeof declaredBin === "string"
+      ? declaredBin
+      : declaredBin?.[value] ?? Object.values(declaredBin ?? {})[0];
+  if (typeof binPath !== "string") {
+    throw new Error(`Package '${value}' does not declare an executable.`);
+  }
+  return {
+    executable: process.execPath,
+    args: [resolve(packageDir, binPath), ...commandArgs],
+  };
+}
+
+const commandSpec = commandForPlatform(command, args);
+const child = spawn(commandSpec.executable, commandSpec.args, {
   env: childEnv,
-  shell: process.platform === "win32",
+  shell: false,
   stdio: "inherit",
 });
 

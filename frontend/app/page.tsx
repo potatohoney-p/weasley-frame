@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { DatasetCard, type DatasetCardData } from "@/components/dataset/DatasetCard";
+import { BrandMark } from "@/components/BrandMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { EVENTS, track } from "@/lib/analytics";
 import { useAppConvexAuth } from "@/lib/app-auth";
@@ -41,8 +42,7 @@ export default function Home() {
   return (
     <div className="flex flex-1 flex-col">
       <header className="border-b border-border px-6 py-3 flex items-center justify-between bg-surface">
-        <img src="/honey-frame-logo.png" alt="honey-frame" className="h-[30px] dark:hidden" />
-        <img src="/honey-frame-logo-dark-bg.png" alt="honey-frame" className="h-[30px] hidden dark:block" />
+        <BrandMark size={30} className="rounded-md" priority />
         <div className="flex items-center gap-3">
           <ThemeToggle />
           <Link
@@ -57,8 +57,7 @@ export default function Home() {
       <main className="flex-1">
         <section className="px-6 pt-20 pb-16">
           <div className="max-w-2xl mx-auto text-center space-y-7">
-            <img src="/honey-frame-logo.png" alt="honey-frame" className="h-12 mx-auto dark:hidden" />
-            <img src="/honey-frame-logo-dark-bg.png" alt="honey-frame" className="h-12 mx-auto hidden dark:block" />
+            <BrandMark size={48} className="mx-auto rounded-xl" priority />
             <p className="text-xl leading-relaxed text-foreground/80">
               Live, queryable datasets — described in plain English, kept fresh by web agents.
             </p>
@@ -79,7 +78,7 @@ export default function Home() {
             <div className="mb-10 flex items-end justify-between gap-6 flex-wrap">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.15em] text-muted font-semibold">
-                  Curated by honey-frame
+                  Curated by Weasley Frame
                 </p>
                 <h2 className="mt-2 text-[26px] font-bold tracking-tight leading-none">
                   Explore live datasets

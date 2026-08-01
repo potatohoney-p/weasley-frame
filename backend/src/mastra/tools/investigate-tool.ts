@@ -1,4 +1,4 @@
-﻿import { createTool } from "@mastra/core/tools";
+import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { convex, internal } from "../../convex.js";
 import { buildInvestigateAgent } from "../agents/investigate.js";
@@ -93,7 +93,7 @@ export function buildSubagentTool(
         if (rowCount >= maxRowCount) {
           return {
             inserted: false,
-            reason: `ROW_LIMIT_REACHED: this honey-frame dataset is capped at ${maxRowCount} rows. Stop calling run_subagent and finish the run.`,
+            reason: `ROW_LIMIT_REACHED: this Weasley Frame dataset is capped at ${maxRowCount} rows. Stop calling run_subagent and finish the run.`,
             row_summary: undefined,
             clues: undefined,
           };

@@ -2,9 +2,9 @@
  * Client-side exporters for dataset views.
  *
  * CSV: hand-rolled, no dependencies. Tiny payload, fast.
- * XLSX: dynamically imports `xlsx` (SheetJS) on demand so the ~700KB
- *       library doesn't enter the main bundle. Users who never click
- *       "Export XLSX" never download it.
+ * XLSX: builds the small Open XML package directly and dynamically imports
+ *       only the ZIP codec. This keeps export code out of the main bundle and
+ *       avoids spreadsheet libraries with unpatched advisories.
  */
 
 export interface ExportColumn {
@@ -88,22 +88,107 @@ export async function downloadXLSX(
   columns: ExportColumn[],
   rows: ExportRow[],
 ): Promise<void> {
-  // Dynamic import — keeps the ~700KB xlsx library out of the main bundle.
-  const XLSX = await import("xlsx");
-
-  // sheet_aoa expects a 2-D array. First row is headers.
-  const aoa: unknown[][] = [
-    columns.map((c) => c.name),
-    ...rows.map((row) => columns.map((c) => row.data[c.name] ?? "")),
-  ];
-
-  const worksheet = XLSX.utils.aoa_to_sheet(aoa);
-  const workbook = XLSX.utils.book_new();
-  // Sheet names are limited to 31 chars; truncate datasets like
-  // "Browser Automation & Web Agent Companies".
+  const { strToU8, zipSync } = await import("fflate");
   const sheetName =
-    datasetName.replace(/[\\/?*[\]:]/g, "-").slice(0, 31) || "Dataset";
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    datasetName
+      .replace(/[\\/?*[\]:]/g, "-")
+      .replace(/^'+|'+$/g, "")
+      .slice(0, 31) || "Dataset";
+  const values: unknown[][] = [
+    columns.map((column) => column.name),
+    ...rows.map((row) => columns.map((column) => row.data[column.name])),
+  ];
+  const sheetRows = values
+    .map((row, rowIndex) => {
+      const rowNumber = rowIndex + 1;
+      const cells = row
+        .map((value, columnIndex) =>
+          xlsxCell(value, `${columnLetters(columnIndex)}${rowNumber}`),
+        )
+        .join("");
+      return `<row r="${rowNumber}">${cells}</row>`;
+    })
+    .join("");
 
-  XLSX.writeFile(workbook, safeFilename(datasetName, "xlsx"));
+  const files = {
+    "[Content_Types].xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+    "_rels/.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+    "xl/workbook.xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="${xmlEscape(sheetName)}" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+    "xl/_rels/workbook.xml.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+    "xl/worksheets/sheet1.xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>${sheetRows}</sheetData>
+</worksheet>`),
+  };
+
+  const output = zipSync(files, { level: 6 });
+  const bytes = new Uint8Array(output.byteLength);
+  bytes.set(output);
+  triggerDownload(
+    new Blob([bytes], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    safeFilename(datasetName, "xlsx"),
+  );
+}
+
+function xlsxCell(value: unknown, reference: string): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `<c r="${reference}" t="n"><v>${value}</v></c>`;
+  }
+  if (typeof value === "boolean") {
+    return `<c r="${reference}" t="b"><v>${value ? 1 : 0}</v></c>`;
+  }
+  const text = spreadsheetText(value);
+  return `<c r="${reference}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(text)}</t></is></c>`;
+}
+
+function spreadsheetText(value: unknown): string {
+  if (value == null) return "";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "string") return stripInvalidXml(value);
+  try {
+    return stripInvalidXml(JSON.stringify(value) ?? String(value));
+  } catch {
+    return stripInvalidXml(String(value));
+  }
+}
+
+function stripInvalidXml(value: string): string {
+  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+}
+
+function xmlEscape(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function columnLetters(index: number): string {
+  let value = index + 1;
+  let letters = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    letters = String.fromCharCode(65 + remainder) + letters;
+    value = Math.floor((value - 1) / 26);
+  }
+  return letters;
 }

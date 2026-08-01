@@ -1,12 +1,12 @@
-﻿# honey-frame Frontend
+# Weasley Frame Frontend
 
-Next.js 16 app — the UI for honey-frame.
+Next.js 16 app — the UI for Weasley Frame.
 
 ## Running
 
 ```bash
-bun install
-bun dev --port 3500
+npm install
+npm run dev
 ```
 
 Opens on [localhost:3500](http://localhost:3500). Package scripts load root
@@ -25,6 +25,6 @@ Opens on [localhost:3500](http://localhost:3500). Package scripts load root
 
 | Command | What it does |
 |---------|-------------|
-| `bun dev --port 3500` | Start dev server |
-| `bun run build` | Production build |
-| `bun run lint` | ESLint |
+| `npm run dev` | Start dev server |
+| `npm run build` | Production build |
+| `npm run lint` | ESLint |

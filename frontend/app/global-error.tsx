@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect } from "react";
 import posthog from "posthog-js";
@@ -55,7 +55,7 @@ export default function GlobalError({
       >
         <div style={{ maxWidth: 360, textAlign: "center" }}>
           <p style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>
-            honey-frame hit an unexpected error.
+            Weasley Frame hit an unexpected error.
           </p>
           <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
             The error has been reported. Please reload the page.

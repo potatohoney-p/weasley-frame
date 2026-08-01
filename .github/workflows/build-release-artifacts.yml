@@ -1,4 +1,4 @@
-﻿---
+---
 name: Build Release Artifacts
 
 on:  # yamllint disable-line rule:truthy
@@ -36,7 +36,7 @@ jobs:
             runner: windows-2025
 
     env:
-      ARTIFACT_NAME: honey-frame-build-${{ matrix.platform }}.zip
+      ARTIFACT_NAME: weasley-frame-build-${{ matrix.platform }}.zip
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
 
     steps:
@@ -62,7 +62,7 @@ jobs:
         run: node scripts/build-release.mjs
 
       - name: Rename artifact
-        run: node -e "const fs = require('fs'); fs.renameSync('dist/honey-frame-build.zip', 'dist/' + process.env.ARTIFACT_NAME);"
+        run: node -e "const fs = require('fs'); fs.renameSync('dist/weasley-frame-build.zip', 'dist/' + process.env.ARTIFACT_NAME);"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -97,6 +97,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          node -e "const fs = require('fs'); fs.copyFileSync('dist/' + process.env.ARTIFACT_NAME, 'dist/honey-frame-build.zip');"
-          gh release upload "$RELEASE_TAG" "dist/honey-frame-build.zip" --clobber
+          node -e "const fs = require('fs'); fs.copyFileSync('dist/' + process.env.ARTIFACT_NAME, 'dist/weasley-frame-build.zip');"
+          gh release upload "$RELEASE_TAG" "dist/weasley-frame-build.zip" --clobber
 

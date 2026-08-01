@@ -1,4 +1,4 @@
-﻿import type { GenericMutationCtx, GenericQueryCtx } from "convex/server";
+import type { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import type { DataModel, Doc, Id } from "../_generated/dataModel.js";
 import { isReservedOwnerId } from "./authz.js";
 
@@ -90,7 +90,7 @@ function getNextMonthStartUTC(ts: number): number {
 }
 
 function isLocalMode(): boolean {
-  return process.env.honey-frame_LOCAL_MODE === "1";
+  return process.env.WEASLEY_FRAME_LOCAL_MODE === "1";
 }
 
 function snapshotOf(

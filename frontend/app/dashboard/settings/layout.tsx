@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeToggle";
 import { LocalUtilityMenu } from "@/components/LocalUtilityMenu";
+import { BrandMark } from "@/components/BrandMark";
 import { useEffect, useRef, useState } from "react";
 import { useAppClerk, useAppUser } from "@/lib/app-auth";
 import { isLocalMode } from "@/lib/app-mode";
@@ -36,8 +37,7 @@ export default function SettingsLayout({
     <div className="flex h-screen flex-col overflow-hidden">
       <header className="border-b border-border px-6 py-3 flex items-center justify-between bg-surface shrink-0">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <img src="/honey-frame-logo.png" alt="honey-frame" className="h-6.5 dark:hidden" />
-          <img src="/honey-frame-logo-dark-bg.png" alt="honey-frame" className="h-6.5 hidden dark:block" />
+          <BrandMark size={26} className="rounded-md" priority />
         </Link>
 
         <div className="flex items-center gap-4">

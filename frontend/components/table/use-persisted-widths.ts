@@ -1,4 +1,4 @@
-﻿import { useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 
 function load<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -17,7 +17,7 @@ function save(key: string, value: unknown) {
 }
 
 export function usePersistedColumnWidths(datasetId: string) {
-  const key = `honey-frame:${datasetId}:colWidths`;
+  const key = `weasley-frame:${datasetId}:colWidths`;
   const [widths, setWidths] = useState<Record<string, number>>(() => load(key, {}));
 
   const updateWidths = useCallback(

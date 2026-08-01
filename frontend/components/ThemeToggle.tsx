@@ -1,12 +1,12 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useSyncExternalStore } from "react";
 import { EVENTS, track } from "@/lib/analytics";
 
 type Theme = "light" | "dark";
 
-const STORAGE_KEY = "honey-frame:theme";
-const THEME_CHANGED_EVENT = "honey-frame:theme-changed";
+const STORAGE_KEY = "weasley-frame:theme";
+const THEME_CHANGED_EVENT = "weasley-frame:theme-changed";
 
 /**
  * The same selection logic that runs in the inline `<head>` script

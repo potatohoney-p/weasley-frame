@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -17,6 +17,7 @@ import {
   type ServiceSetupStatus,
 } from "@/lib/backend";
 import { isLocalMode } from "@/lib/app-mode";
+import { BrandMark } from "@/components/BrandMark";
 
 export default function SetupPage() {
   const router = useRouter();
@@ -48,8 +49,7 @@ export default function SetupPage() {
   return (
     <div className="flex flex-1 flex-col">
       <header className="border-b border-border bg-surface px-6 py-3">
-        <img src="/honey-frame-logo.png" alt="honey-frame" className="h-[30px] dark:hidden" />
-        <img src="/honey-frame-logo-dark-bg.png" alt="honey-frame" className="h-[30px] hidden dark:block" />
+        <BrandMark size={30} className="rounded-md" priority />
       </header>
 
       <main className="flex-1 px-5 py-10 sm:px-6 sm:py-12">
@@ -67,33 +67,24 @@ export default function SetupPage() {
           <div className="grid gap-4">
             <ServiceCard
               brand={
-                <>
-                  <img
-                    src="https://www.tinyfish.ai/TF-Logos/Horizontal%20Logo/SVG/TF_Horizontal.svg"
-                    alt="TinyFish"
-                    className="h-8 w-auto dark:hidden"
-                  />
-                  <img
-                    src="/logos/engines/tinyfish-wordmark-dark.svg"
-                    alt="TinyFish"
-                    className="hidden h-8 w-auto dark:block"
-                  />
-                </>
+                <span className="text-xl font-black tracking-tight text-foreground">
+                  TinyFish
+                </span>
               }
-              description="honey-frame uses TinyFish's best-in-class search API to unlock real-time information."
+              description="Weasley Frame uses TinyFish for live web search and retrieval."
               status={status?.services.tinyfish}
               primaryLabel={
                 status?.services.tinyfish.configured ? "Update key" : "Add API key"
               }
               onPrimary={() => setModal("tinyfish")}
-              helperHref="https://agent.tinyfish.ai/api-keys?utm_source=github&utm_medium=organic&utm_campaign=honey-frame-developer-2026q2"
+              helperHref="https://agent.tinyfish.ai/api-keys"
               helperLabel="Need a TinyFish key?"
               helperDescription="Open the TinyFish API keys page"
             />
 
             <ServiceCard
               brand={<OpenRouterBrand />}
-              description="honey-frame uses OpenRouter's API to power honey-frame with AI model access."
+              description="Weasley Frame uses OpenRouter to access the configured research models."
               status={status?.services.openrouter}
               primaryLabel={
                 status?.services.openrouter.configured
@@ -302,8 +293,8 @@ function ApiKeyModal({
             </h2>
             <p className="mt-1 text-xs text-muted">
               {isTinyFish
-                ? "honey-frame verifies the key and stores it in your OS keychain."
-                : "honey-frame verifies the key and stores it in your OS keychain."}
+                ? "Weasley Frame verifies the key and stores it in your OS keychain."
+                : "Weasley Frame verifies the key and stores it in your OS keychain."}
             </p>
           </div>
           <button
@@ -339,7 +330,7 @@ function ApiKeyModal({
             <a
               href={
                 isTinyFish
-                  ? "https://agent.tinyfish.ai/api-keys?utm_source=github&utm_medium=organic&utm_campaign=honey-frame-developer-2026q2"
+                  ? "https://agent.tinyfish.ai/api-keys"
                   : "https://openrouter.ai/settings/keys"
               }
               target="_blank"

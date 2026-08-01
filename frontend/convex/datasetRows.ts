@@ -1,4 +1,4 @@
-﻿import { query, internalMutation, internalQuery } from "./_generated/server.js";
+import { query, internalMutation, internalQuery } from "./_generated/server.js";
 import type { MutationCtx } from "./_generated/server.js";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel.js";
@@ -96,7 +96,7 @@ export const insert = internalMutation({
     const maxRowCount = dataset.maxRowCount ?? DEFAULT_MAX_DATASET_ROWS;
     if (previousCount >= maxRowCount) {
       throw new Error(
-        `Row limit reached: this honey-frame dataset is capped at ${maxRowCount} rows. Stop inserting rows and finish the run.`,
+        `Row limit reached: this Weasley Frame dataset is capped at ${maxRowCount} rows. Stop inserting rows and finish the run.`,
       );
     }
 

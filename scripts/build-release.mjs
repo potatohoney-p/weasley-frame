@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
@@ -17,8 +17,8 @@ const frontendDir = join(repoRoot, "frontend");
 const backendDir = join(repoRoot, "backend");
 const distDir = join(repoRoot, "dist");
 const workDir = join(distDir, "release-work");
-const packageRoot = join(workDir, "honey-frame");
-const artifactPath = join(distDir, "honey-frame-build.zip");
+const packageRoot = join(workDir, "weasley-frame");
+const artifactPath = join(distDir, "weasley-frame-build.zip");
 const sizeLimitBytes = 50 * 1024 * 1024;
 const convexRuntimePackages = ["convex", "esbuild", "@esbuild", "prettier", "ws"];
 
@@ -32,6 +32,18 @@ function run(command, args, options = {}) {
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
+}
+
+function runNpm(args, options = {}) {
+  if (process.platform === "win32") {
+    const npmCli = process.env.npm_execpath;
+    if (!npmCli) {
+      throw new Error("npm_execpath is unavailable; run this build through `npm run build:release`.");
+    }
+    run(process.execPath, [npmCli, ...args], { ...options, shell: false });
+    return;
+  }
+  run("npm", args, { ...options, shell: false });
 }
 
 async function assertExists(path, message) {
@@ -55,16 +67,28 @@ function powerShellQuote(value) {
 
 function createZipArtifact() {
   if (process.platform === "win32") {
+    const tarCheck = spawnSync("tar.exe", ["--version"], {
+      shell: false,
+      stdio: "ignore",
+    });
+    if (tarCheck.status === 0) {
+      run("tar.exe", ["-a", "-c", "-f", artifactPath, "weasley-frame"], {
+        cwd: workDir,
+      });
+      return;
+    }
+
+    // Older Windows images may not include bsdtar. Keep a compatible fallback.
     run("powershell.exe", [
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      `Compress-Archive -LiteralPath ${powerShellQuote(join(workDir, "honey-frame"))} -DestinationPath ${powerShellQuote(artifactPath)} -CompressionLevel Optimal -Force`,
+      `Compress-Archive -LiteralPath ${powerShellQuote(join(workDir, "weasley-frame"))} -DestinationPath ${powerShellQuote(artifactPath)} -CompressionLevel Optimal -Force`,
     ], { shell: false });
     return;
   }
 
-  run("zip", ["-qry", "-9", artifactPath, "honey-frame"], { cwd: workDir });
+  run("zip", ["-qry", "-9", artifactPath, "weasley-frame"], { cwd: workDir });
 }
 
 async function writeStartScript() {
@@ -77,8 +101,8 @@ import { fileURLToPath } from "node:url";
 
 const root = new URL(".", import.meta.url);
 const fromRoot = (path) => fileURLToPath(new URL(path, root));
-const backendPort = process.env.honey-frame_BACKEND_PORT || "3501";
-const frontendPort = process.env.honey-frame_FRONTEND_PORT || "3500";
+const backendPort = process.env.WEASLEY_FRAME_BACKEND_PORT || "3501";
+const frontendPort = process.env.WEASLEY_FRAME_FRONTEND_PORT || "3500";
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || \`http://127.0.0.1:\${backendPort}\`;
 const frontendUrl = \`http://127.0.0.1:\${frontendPort}\`;
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || process.env.CONVEX_URL || "http://127.0.0.1:3210";
@@ -159,7 +183,7 @@ start(
 );
 
 console.log("");
-console.log("honey-frame release build is starting.");
+console.log("Weasley Frame release build is starting.");
 console.log(\`  App:     \${frontendUrl}\`);
 console.log(\`  Backend: \${backendUrl}\`);
 console.log(\`  Convex:  \${convexUrl}\`);
@@ -174,7 +198,7 @@ console.log("Press Ctrl+C to stop.");
 async function writeReadme() {
   await writeFile(
     join(packageRoot, "README.txt"),
-    `honey-frame local release build
+    `Weasley Frame local release build
 
 Run:
   node start.mjs
@@ -184,11 +208,11 @@ Ports:
   Backend: http://127.0.0.1:3501
 
 Overrides:
-  honey-frame_FRONTEND_PORT=4500 honey-frame_BACKEND_PORT=4501 node start.mjs
+  WEASLEY_FRAME_FRONTEND_PORT=4500 WEASLEY_FRAME_BACKEND_PORT=4501 node start.mjs
 
-This artifact does not bundle the Convex binary. Start it with the honey-frame CLI,
+This artifact does not bundle the Convex binary. Start it with the Weasley Frame CLI,
 or run Convex locally and set CONVEX_URL/NEXT_PUBLIC_CONVEX_URL. The Convex app
-source and CLI runtime are included so the honey-frame CLI can deploy functions to a
+source and CLI runtime are included so the Weasley Frame CLI can deploy functions to a
 fresh local Convex backend.
 `,
   );
@@ -207,7 +231,7 @@ async function bundleBackend() {
     target: "node22",
     outfile: join(packageRoot, "backend", "backend.mjs"),
     banner: {
-      js: `import { createRequire as __honey-frameCreateRequire } from "node:module"; const require = __honey-frameCreateRequire(import.meta.url);`,
+      js: `import { createRequire as __weasleyFrameCreateRequire } from "node:module"; const require = __weasleyFrameCreateRequire(import.meta.url);`,
     },
     packages: "bundle",
     logLevel: "warning",
@@ -245,9 +269,8 @@ async function main() {
   await mkdir(join(packageRoot, "frontend"), { recursive: true });
 
   console.log("Building frontend standalone output...");
-  run("npm", ["run", "build"], {
+  runNpm(["run", "build"], {
     cwd: frontendDir,
-    shell: process.platform === "win32",
     env: {
       NEXT_PUBLIC_BACKEND_URL: "http://127.0.0.1:3501",
       NEXT_PUBLIC_CONVEX_URL: "http://127.0.0.1:3210",
