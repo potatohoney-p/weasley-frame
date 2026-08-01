@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root,
+:root[data-theme="light"] {
+  --background: rgb(243, 244, 240);
+  --foreground: #1d1b16;
+  --surface: rgb(229, 231, 224);
+  --border: rgb(205, 208, 198);
+  --muted: #7c7f74;
+  --accent: #1d1b16;
+  --accent-text: rgb(243, 244, 240);
+  --link: #2563eb;
+  --link-decoration: rgba(37, 99, 235, 0.3);
+  --link-decoration-hover: rgba(37, 99, 235, 0.6);
+  --table-row-height: 34px;
+  --table-header-height: 32px;
+  --table-cell-px: 12px;
+  --table-cell-py: 8px;
+}
+
+:root[data-theme="dark"] {
+  --background: #141210;
+  --foreground: #e8e4de;
+  --surface: #1c1a17;
+  --border: #2e2b26;
+  --muted: #7a756c;
+  --accent: #e8e4de;
+  --accent-text: #141210;
+  --link: #93b4f5;
+  --link-decoration: rgba(147, 180, 245, 0.25);
+  --link-decoration-hover: rgba(147, 180, 245, 0.5);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-link: var(--link);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+.theme-transition,
+.theme-transition *:not(.card-glow *) {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), sans-serif;
+}
+
+@property --border-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes spin-border {
+  to { --border-angle: 360deg; }
+}
+
+.card-glow {
+  position: relative;
+}
+
+.card-glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--border-angle),
+    #4285f4, #ea4335, #fbbc04, #34a853, #4285f4
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.group:hover .card-glow::before {
+  opacity: 0.8;
+  animation: spin-border 0.8s linear infinite;
+}
+
+:root[data-theme="dark"] .group:hover .card-glow::before {
+  opacity: 0.45;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes cell-flash {
+  0% { background-color: rgba(16, 185, 129, 0.25); }
+  100% { background-color: transparent; }
+}
+
+.shimmer-overlay {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--foreground) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+  opacity: 0.04;
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .shimmer-overlay {
+  opacity: 0.06;
+}
+
+.cell-flash {
+  animation: cell-flash 1.5s ease-out forwards;
+}

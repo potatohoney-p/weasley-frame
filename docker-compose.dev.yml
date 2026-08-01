@@ -1,0 +1,169 @@
+﻿services:
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: honey-frame
+      POSTGRES_PASSWORD: honey-frame
+      POSTGRES_DB: honey-frame_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honey-frame -d honey-frame_internal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    env_file:
+      - .env
+    ports:
+      - "3501:3501"
+    volumes:
+      - ./backend/src:/app/src
+      - ./scripts:/scripts:ro
+    environment:
+      CLIENT_ORIGIN: http://localhost:3500
+      CONVEX_URL: http://convex:3210
+      PORT: 3501
+      PROD: ${PROD:-}
+      CONVEX_SELF_HOSTED_ADMIN_KEY: ${CONVEX_SELF_HOSTED_ADMIN_KEY:-}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      TINYFISH_API_KEY: ${TINYFISH_API_KEY:-}
+      honey-frame_LOCAL_WORKSPACE_ID: ${honey-frame_LOCAL_WORKSPACE_ID:-}
+      LOCAL_KEYCHAIN_URL: http://host.docker.internal:${LOCAL_KEYCHAIN_PORT:-3502}
+      LOCAL_KEYCHAIN_TOKEN: ${LOCAL_KEYCHAIN_TOKEN:-}
+      LOCAL_KEYCHAIN_TIMEOUT_MS: ${LOCAL_KEYCHAIN_TIMEOUT_MS:-5000}
+      # Transactional email — when unset, the email module no-ops.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-honey-frame <simantak@tinyfish.ai>}
+      # PostHog server-side analytics — same project key as the frontend.
+      # When unset, backend analytics module no-ops.
+      POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
+      POSTHOG_HOST: ${NEXT_PUBLIC_POSTHOG_HOST:-https://us.i.posthog.com}
+      REFRESH_SCHEDULER_ENABLED: ${REFRESH_SCHEDULER_ENABLED:-true}
+      REFRESH_SCHEDULER_POLL_MS: ${REFRESH_SCHEDULER_POLL_MS:-60000}
+      REFRESH_SCHEDULER_BATCH_SIZE: ${REFRESH_SCHEDULER_BATCH_SIZE:-5}
+      REFRESH_SCHEDULER_STALE_AFTER_MS: ${REFRESH_SCHEDULER_STALE_AFTER_MS:-21600000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      convex:
+        condition: service_healthy
+
+  mastra:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.mastra
+    env_file:
+      - .env
+    ports:
+      - "4111:4111"
+    volumes:
+      - ./backend/src:/app/src
+      - ./scripts:/scripts:ro
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4111
+      PROD: ${PROD:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      CONVEX_URL: http://convex:3210
+      CONVEX_SELF_HOSTED_ADMIN_KEY: ${CONVEX_SELF_HOSTED_ADMIN_KEY:-}
+      TINYFISH_API_KEY: ${TINYFISH_API_KEY:-}
+      honey-frame_LOCAL_WORKSPACE_ID: ${honey-frame_LOCAL_WORKSPACE_ID:-}
+      LOCAL_KEYCHAIN_URL: http://host.docker.internal:${LOCAL_KEYCHAIN_PORT:-3502}
+      LOCAL_KEYCHAIN_TOKEN: ${LOCAL_KEYCHAIN_TOKEN:-}
+      LOCAL_KEYCHAIN_TIMEOUT_MS: ${LOCAL_KEYCHAIN_TIMEOUT_MS:-5000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      convex:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    env_file:
+      - .env
+    ports:
+      - "3500:3500"
+    volumes:
+      - ./frontend/app:/app/app
+      - ./frontend/lib:/app/lib
+      - ./frontend/components:/app/components
+      - ./frontend/public:/app/public
+      - ./frontend/convex:/app/convex
+      # Root-level source files outside the mounted folders above. Without
+      # these the container runs whatever was baked into the image at build
+      # time and silently ignores local edits.
+      - ./frontend/proxy.ts:/app/proxy.ts
+      - ./frontend/next.config.ts:/app/next.config.ts
+      - ./scripts:/scripts:ro
+    environment:
+      NEXT_PUBLIC_CONVEX_URL: http://localhost:3210
+      NEXT_PUBLIC_PROD: ${PROD:-}
+      PROD: ${PROD:-}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+      NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: /dashboard
+      NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: /dashboard
+      NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL: /dashboard
+      NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL: /dashboard
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: /dashboard
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: /dashboard
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:3501
+      # PostHog — analytics no-ops if unset
+      NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
+      NEXT_PUBLIC_POSTHOG_HOST: ${NEXT_PUBLIC_POSTHOG_HOST:-https://us.i.posthog.com}
+    depends_on:
+      convex:
+        condition: service_healthy
+
+  convex:
+    image: ghcr.io/get-convex/convex-backend:latest
+    ports:
+      - "3210:3210"
+      - "3211:3211"
+    volumes:
+      - convex_data:/convex/data
+    environment:
+      CONVEX_CLOUD_ORIGIN: http://127.0.0.1:3210
+      CONVEX_SITE_ORIGIN: http://127.0.0.1:3211
+      POSTGRES_URL: postgresql://honey-frame:honey-frame@db:5432
+      DO_NOT_REQUIRE_SSL: 1
+      INSTANCE_NAME: convex-self-hosted
+      RUST_LOG: info
+      DISABLE_BEACON: true
+      DISABLE_METRICS_ENDPOINT: true
+    healthcheck:
+      test: curl -f http://localhost:3210/version
+      interval: 5s
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+
+  convex-dashboard:
+    image: ghcr.io/get-convex/convex-dashboard:latest
+    ports:
+      - "6791:6791"
+    environment:
+      NEXT_PUBLIC_DEPLOYMENT_URL: http://127.0.0.1:3210
+    depends_on:
+      convex:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  convex_data:
+

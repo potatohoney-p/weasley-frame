@@ -1,0 +1,32 @@
+﻿.DS_Store
+node_modules/
+.npm-cache/
+.env
+.env.local
+Project_honey-frame_brief.md
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Local-only files
+*.bak
+.local/
+dist/
+tmp/
+temp/
+
+.mastra
+
+# Local tarballs
+*.tgz
+
+# Internal docs
+honey-frame Technical Specs & Goals.md
