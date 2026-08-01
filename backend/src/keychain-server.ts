@@ -1,4 +1,4 @@
-﻿import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -15,7 +15,7 @@ if (existsSync(rootEnvPath)) {
   loadDotenv({ path: rootEnvPath });
 }
 
-const KEYCHAIN_SERVICE = "ai.honey-frame.local-credentials";
+const KEYCHAIN_SERVICE = "dev.weasley.frame.local-credentials";
 const MAX_BODY_BYTES = 64 * 1024;
 
 function requiredEnv(name: string): string {
@@ -38,7 +38,7 @@ function numberEnv(name: string): number {
 const bindHost = process.env.LOCAL_KEYCHAIN_BIND_HOST || "127.0.0.1";
 const port = numberEnv("LOCAL_KEYCHAIN_PORT");
 const token = requiredEnv("LOCAL_KEYCHAIN_TOKEN");
-const workspaceId = requiredEnv("honey-frame_LOCAL_WORKSPACE_ID");
+const workspaceId = requiredEnv("WEASLEY_FRAME_LOCAL_WORKSPACE_ID");
 
 interface CredentialBody {
   service?: unknown;

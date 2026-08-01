@@ -1,4 +1,4 @@
-﻿# honey-frame Backend
+# Weasley Frame Backend
 
 Fastify server that handles auth, database, and talks to TinyFish APIs.
 

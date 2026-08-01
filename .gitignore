@@ -1,9 +1,9 @@
-﻿.DS_Store
+.DS_Store
 node_modules/
 .npm-cache/
 .env
 .env.local
-Project_honey-frame_brief.md
+Project_weasley-frame_brief.md
 
 # Editor / IDE
 .idea/
@@ -29,4 +29,4 @@ temp/
 *.tgz
 
 # Internal docs
-honey-frame Technical Specs & Goals.md
+weasley-frame Technical Specs & Goals.md

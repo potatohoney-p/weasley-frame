@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   GenericQueryCtx,
   GenericMutationCtx,
   UserIdentity,
@@ -37,14 +37,14 @@ const UNAUTHENTICATED = "Not authenticated";
 const LOCAL_USER_ID = "local_user_default";
 
 function isLocalMode(): boolean {
-  return process.env.honey-frame_LOCAL_MODE === "1";
+  return process.env.WEASLEY_FRAME_LOCAL_MODE === "1";
 }
 
 function localIdentity(): UserIdentity {
   return {
     subject: LOCAL_USER_ID,
-    issuer: "honey-frame-local",
-    tokenIdentifier: `honey-frame-local|${LOCAL_USER_ID}`,
+    issuer: "weasley-frame-local",
+    tokenIdentifier: `weasley-frame-local|${LOCAL_USER_ID}`,
   };
 }
 

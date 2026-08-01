@@ -1,5 +1,5 @@
-﻿export const OPENROUTER_VERIFIER_KEY = "honey-frame:openrouter-code-verifier";
-export const OPENROUTER_RETURN_TO_KEY = "honey-frame:openrouter-return-to";
+export const OPENROUTER_VERIFIER_KEY = "weasley-frame:openrouter-code-verifier";
+export const OPENROUTER_RETURN_TO_KEY = "weasley-frame:openrouter-return-to";
 
 function base64Url(bytes: ArrayBuffer): string {
   let binary = "";

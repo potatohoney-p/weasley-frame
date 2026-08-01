@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -8,6 +8,7 @@ import { api } from "@/convex/_generated/api";
 import { EVENTS, track } from "@/lib/analytics";
 import { inferSchema, type InferredColumn } from "@/lib/backend";
 import { useAppAuth, useAppConvexAuth } from "@/lib/app-auth";
+import { BrandMark } from "@/components/BrandMark";
 import {
   REFRESH_CADENCE_OPTIONS,
   type RefreshCadence,
@@ -227,8 +228,7 @@ export default function NewDatasetPage() {
       <header className="border-b border-border px-5 py-3 flex items-center justify-between bg-surface shrink-0">
         <div className="flex items-center gap-3">
           <Link href="/dashboard" className="hover:opacity-80 transition-opacity">
-            <img src="/honey-frame-logo.png" alt="honey-frame" className="h-[26px] dark:hidden" />
-            <img src="/honey-frame-logo-dark-bg.png" alt="honey-frame" className="h-[26px] hidden dark:block" />
+            <BrandMark size={26} className="rounded-md" priority />
           </Link>
           <span className="text-foreground/15">/</span>
           <h1 className="text-sm font-semibold tracking-tight">New Dataset</h1>

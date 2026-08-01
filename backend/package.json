@@ -1,6 +1,14 @@
-﻿{
-    "name":  "honey-frame-backend",
+{
+    "name":  "weasley-frame-backend",
     "version":  "0.1.0",
+    "description": "Fastify and Mastra backend for Weasley Frame",
+    "license": "Apache-2.0",
+    "author": "Weasley Contributors",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/potatohoney-p/weasley-frame.git",
+        "directory": "backend"
+    },
     "type":  "module",
     "private":  true,
     "scripts":  {
@@ -35,6 +43,12 @@
                       "hono":  "^4.12.25",
                       "js-cookie":  "^3.0.7",
                       "@babel/core":  "^7.29.6",
-                      "esbuild":  "^0.28.1"
+                      "esbuild":  "^0.28.1",
+                      "@hono/node-server": "2.0.12",
+                      "undici": "6.28.0",
+                      "ai": {
+                          "@ai-sdk/gateway": "3.0.159",
+                          "@ai-sdk/provider-utils": "4.0.40"
+                      }
                   }
 }

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   ClerkProvider,
@@ -12,8 +12,8 @@ import { isLocalMode, LOCAL_USER_ID } from "./app-mode";
 
 const localUser = {
   id: LOCAL_USER_ID,
-  fullName: "honey-frame local",
-  firstName: "honey-frame",
+  fullName: "Weasley Frame local",
+  firstName: "Weasley Frame",
   primaryEmailAddress: null,
   imageUrl: null,
 };
@@ -22,7 +22,7 @@ const localAuth = {
   isLoaded: true,
   isSignedIn: true,
   userId: LOCAL_USER_ID,
-  getToken: async () => "honey-frame-local",
+  getToken: async () => "weasley-frame-local",
 };
 
 const localUserState = {

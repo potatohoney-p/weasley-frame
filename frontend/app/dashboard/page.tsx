@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -12,6 +12,7 @@ import {
 import { useTheme } from "@/components/ThemeToggle";
 import { QuotaBadge } from "@/components/QuotaBadge";
 import { LocalUtilityMenu } from "@/components/LocalUtilityMenu";
+import { BrandMark } from "@/components/BrandMark";
 import { EVENTS, track } from "@/lib/analytics";
 import type { ProfileUser } from "@/lib/profile-user";
 import { useAppClerk, useAppConvexAuth, useAppUser } from "@/lib/app-auth";
@@ -86,8 +87,7 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-1 flex-col">
       <header className="border-b border-border px-6 py-3 flex items-center justify-between bg-surface">
-        <img src="/honey-frame-logo.png" alt="honey-frame" className="h-[30px] dark:hidden" />
-        <img src="/honey-frame-logo-dark-bg.png" alt="honey-frame" className="h-[30px] hidden dark:block" />
+        <BrandMark size={30} className="rounded-md" priority />
         <div className="flex items-center gap-4">
           {isLocalMode ? (
             <LocalUtilityMenu />
@@ -202,7 +202,7 @@ export default function DashboardPage() {
             <div className="h-12" />
 
             <Section
-              eyebrow="Curated by honey-frame"
+              eyebrow="Curated by Weasley Frame"
               heading="Explore live datasets"
               isLoading={curated === undefined}
               datasets={filteredCurated as unknown as DatasetCardData[]}

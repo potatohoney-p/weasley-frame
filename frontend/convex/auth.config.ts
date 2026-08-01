@@ -1,6 +1,6 @@
-﻿import type { AuthConfig } from "convex/server";
+import type { AuthConfig } from "convex/server";
 
-const isLocalMode = process.env.honey-frame_LOCAL_MODE === "1";
+const isLocalMode = process.env.WEASLEY_FRAME_LOCAL_MODE === "1";
 const clerkIssuer = process.env.CLERK_JWT_ISSUER_DOMAIN;
 
 if (!isLocalMode && !clerkIssuer) {

@@ -12,6 +12,7 @@ import { SideSheet, CellDetail } from "@/components/SideSheet";
 import type { DatasetColumn } from "@/components/table/types";
 import { useTheme } from "@/components/ThemeToggle";
 import { StatusBadge } from "@/components/dataset/StatusBadge";
+import { BrandMark } from "@/components/BrandMark";
 import { downloadCSV, downloadXLSX } from "@/lib/export";
 import { populate, update, stopPopulation } from "@/lib/backend";
 import { EVENTS, captureException, track } from "@/lib/analytics";
@@ -354,8 +355,7 @@ export default function DatasetPage() {
       <header className="border-b border-border px-5 py-2.5 flex items-center justify-between bg-surface shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <Link href="/dashboard" className="hover:opacity-80 transition-opacity shrink-0">
-            <img src="/honey-frame-logo.png" alt="honey-frame" className="h-[24px] dark:hidden" />
-            <img src="/honey-frame-logo-dark-bg.png" alt="honey-frame" className="h-[24px] hidden dark:block" />
+            <BrandMark size={24} className="rounded-md" priority />
           </Link>
           <svg width="8" height="20" viewBox="0 0 8 20" className="text-border shrink-0" aria-hidden="true">
             <line x1="7" y1="0" x2="1" y2="20" stroke="currentColor" strokeWidth="1.2" />

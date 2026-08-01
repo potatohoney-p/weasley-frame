@@ -1,0 +1,42 @@
+{
+  "name": "weasley-frame",
+  "version": "1.0.0",
+  "description": "Open-source live-web research workspace that turns a prompt into a verifiable, refreshable dataset.",
+  "type": "module",
+  "bin": {
+    "weasley-frame": "bin/weasley-frame.mjs"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "npm run build --prefix backend && npm run build --prefix frontend",
+    "build:release": "node scripts/build-release.mjs",
+    "lint": "npm run lint --prefix frontend",
+    "test": "node --test tests/*.test.mjs",
+    "prepublishOnly": "npm test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "weasley",
+    "datasets",
+    "web-research",
+    "ai-agents",
+    "open-source"
+  ],
+  "author": "Weasley Contributors",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/potatohoney-p/weasley-frame.git"
+  },
+  "homepage": "https://github.com/potatohoney-p/weasley-frame#readme",
+  "bugs": {
+    "url": "https://github.com/potatohoney-p/weasley-frame/issues"
+  }
+}

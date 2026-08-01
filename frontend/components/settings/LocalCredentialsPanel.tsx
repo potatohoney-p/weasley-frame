@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -23,21 +23,21 @@ const SERVICE_COPY = {
   tinyfish: {
     modalTitle: "TinyFish API key",
     description:
-      "honey-frame uses TinyFish's best-in-class search API to unlock real-time information.",
+      "Weasley Frame uses TinyFish for live web search and retrieval.",
     inputPlaceholder: "tf_...",
-    modalDescription: "honey-frame verifies the key and stores it in your OS keychain.",
+    modalDescription: "Weasley Frame verifies the key and stores it in your OS keychain.",
     helperHref:
-      "https://agent.tinyfish.ai/api-keys?utm_source=github&utm_medium=organic&utm_campaign=honey-frame-developer-2026q2",
+      "https://agent.tinyfish.ai/api-keys",
     helperLabel: "Need a TinyFish key?",
     helperDescription: "Open the TinyFish API keys page",
   },
   openrouter: {
     modalTitle: "OpenRouter API key",
     description:
-      "honey-frame uses OpenRouter's API to power honey-frame with AI model access.",
+      "Weasley Frame uses OpenRouter to access the configured research models.",
     inputPlaceholder: "sk-or-...",
     modalDescription:
-      "honey-frame verifies the key and stores it in your OS keychain.",
+      "Weasley Frame verifies the key and stores it in your OS keychain.",
     helperHref: "https://openrouter.ai/settings/keys",
     helperLabel: "Need an OpenRouter key?",
     helperDescription: "Open the OpenRouter keys page",
@@ -193,18 +193,9 @@ function CredentialCard({
 function ServiceBrand({ service }: { service: ServiceName }) {
   if (service === "tinyfish") {
     return (
-      <>
-        <img
-          src="https://www.tinyfish.ai/TF-Logos/Horizontal%20Logo/SVG/TF_Horizontal.svg"
-          alt="TinyFish"
-          className="h-8 w-auto dark:hidden"
-        />
-        <img
-          src="/logos/engines/tinyfish-wordmark-dark.svg"
-          alt="TinyFish"
-          className="hidden h-8 w-auto dark:block"
-        />
-      </>
+      <span className="text-xl font-black tracking-tight text-foreground">
+        TinyFish
+      </span>
     );
   }
 

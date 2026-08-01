@@ -1,4 +1,4 @@
-﻿import { convex, internal } from "./convex.js";
+import { convex, internal } from "./convex.js";
 import { env } from "./env.js";
 import { FETCH_TIMEOUT_MS } from "./fetch-timeout.js";
 import {
@@ -105,8 +105,8 @@ export async function getTinyFishApiKey(): Promise<string | undefined> {
 export function tinyFishHeaders(apiKey: string): Record<string, string> {
   return {
     "X-API-Key": apiKey,
-    "X-TF-ORIGIN": "honey-frame",
-    "X-TF-Request-Origin": "honey-frame",
+    "X-TF-ORIGIN": "weasley-frame",
+    "X-TF-Request-Origin": "weasley-frame",
   };
 }
 
@@ -225,7 +225,7 @@ export async function clearLegacyPlaintextLocalCredentials(): Promise<void> {
 
 export async function verifyTinyFishApiKey(apiKey: string): Promise<void> {
   const url = new URL("https://api.search.tinyfish.ai");
-  url.searchParams.set("query", "honey-frame");
+  url.searchParams.set("query", "weasley-frame");
 
   await withFetchTimeout(
     async (signal) => {

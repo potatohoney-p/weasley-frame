@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ConvexClientProvider } from "./convex-provider";
 import { AppAuthProvider } from "@/lib/app-auth";
@@ -18,20 +18,20 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "honey-frame",
+  title: "Weasley Frame",
   description: "Live, queryable datasets by TinyFish",
 };
 
 /**
  * Inline script: resolve theme BEFORE React hydrates so we never paint
- * the wrong palette and then flip. Reads `honey-frame:theme` from localStorage,
+ * the wrong palette and then flip. Reads `weasley-frame:theme` from localStorage,
  * falls back to the OS preference. Sets `<html data-theme>` synchronously.
  *
  * Kept as a string and injected via `dangerouslySetInnerHTML` because Next
  * inlines it as-is into `<head>` — Script components defer execution and
  * would re-introduce the flicker.
  */
-const themeInitScript = `(function(){try{var s=localStorage.getItem('honey-frame:theme');var t=s==='dark'||s==='light'?s:(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
+const themeInitScript = `(function(){try{var s=localStorage.getItem('weasley-frame:theme');var t=s==='dark'||s==='light'?s:(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
 
 export default function RootLayout({
   children,

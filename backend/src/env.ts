@@ -1,4 +1,4 @@
-﻿import { config as loadDotenv } from "dotenv";
+import { config as loadDotenv } from "dotenv";
 import { fileURLToPath } from "node:url";
 
 loadDotenv({ path: fileURLToPath(new URL("../../.env", import.meta.url)) });
@@ -39,7 +39,9 @@ export const env = {
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
 
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
-  honey-frame_LOCAL_WORKSPACE_ID: required("honey-frame_LOCAL_WORKSPACE_ID"),
+  WEASLEY_FRAME_LOCAL_WORKSPACE_ID: required(
+    "WEASLEY_FRAME_LOCAL_WORKSPACE_ID",
+  ),
   LOCAL_KEYCHAIN_URL: process.env.LOCAL_KEYCHAIN_URL,
   LOCAL_KEYCHAIN_TOKEN: process.env.LOCAL_KEYCHAIN_TOKEN,
   LOCAL_KEYCHAIN_TIMEOUT_MS: numberFromEnv("LOCAL_KEYCHAIN_TIMEOUT_MS", 5_000),
@@ -58,7 +60,8 @@ export const env = {
   // a Resend account. EMAIL_FROM must be a domain that's verified in the
   // Resend dashboard.
   RESEND_API_KEY: process.env.RESEND_API_KEY,
-  EMAIL_FROM: process.env.EMAIL_FROM || "honey-frame <simantak@tinyfish.ai>",
+  EMAIL_FROM:
+    process.env.EMAIL_FROM || "Weasley Frame <onboarding@resend.dev>",
 
   // PostHog (server-side analytics for events the frontend can't observe —
   // currently just the transactional email lifecycle). Same project key
