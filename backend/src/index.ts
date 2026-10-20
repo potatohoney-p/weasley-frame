@@ -259,6 +259,7 @@ async function beginDatasetUpdate(
 async function runUpdateWorkflowInBackground({
   input,
   run,
+  controller,
   authorizedUserId,
   logger,
   clerk,
@@ -266,6 +267,7 @@ async function runUpdateWorkflowInBackground({
 }: {
   input: DatasetContext;
   run: UpdateWorkflowRun;
+  controller: AbortController;
   authorizedUserId: string;
   logger: FastifyBaseLogger;
   clerk: ClerkClient;
@@ -358,7 +360,7 @@ async function runUpdateWorkflowInBackground({
       );
     }
   } finally {
-    deregisterDataset(datasetId);
+    deregisterDataset(datasetId, controller);
   }
 }
 
@@ -380,7 +382,7 @@ async function runScheduledUpdateWorkflowInBackground({
   };
 }): Promise<void> {
   const datasetId = input.datasetId;
-  registerDataset(datasetId);
+  const controller = registerDataset(datasetId);
 
   try {
     const result = await run.start({
@@ -428,7 +430,7 @@ async function runScheduledUpdateWorkflowInBackground({
       );
     }
   } finally {
-    deregisterDataset(datasetId);
+    deregisterDataset(datasetId, controller);
   }
 }
 
@@ -553,7 +555,7 @@ async function runPopulateWorkflowInBackground({
       );
     }
   } finally {
-    deregisterDataset(datasetId);
+    deregisterDataset(datasetId, controller);
   }
 }
 
@@ -1278,11 +1280,12 @@ await fastify.register(async (instance) => {
       // instant the 202 is sent, closing the TOCTOU window where a /stop
       // arriving before registerDataset runs inside the background function
       // would incorrectly force-transition an active run to "failed".
-      registerDataset(parsed.data.datasetId);
+      const controller = registerDataset(parsed.data.datasetId);
 
       void runUpdateWorkflowInBackground({
         input: parsed.data,
         run,
+        controller,
         authorizedUserId: auth.userId,
         logger: req.log,
         clerk: req.server.clerk,

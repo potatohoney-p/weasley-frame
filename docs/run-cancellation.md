@@ -1,0 +1,48 @@
+# Cancellation ownership during repeated runs
+
+A dataset can become `live` or `failed` before its old background runner has
+returned. In production, a ready-email request may still be pending. A persisted
+terminal status may also become visible to another request before the mutation's
+response arrives. In either case a new run can legitimately claim the dataset.
+
+The abort registry stores the latest registered controller for each dataset.
+Every runner must retain the controller it registered and pass that exact object
+to `deregisterDataset` in its `finally` block. Cleanup only removes a matching
+entry; cleanup from an old run or repeated cleanup is a no-op. This applies to
+populate, manual update, and scheduled update runners.
+
+Without this ownership check, the old runner removes the new run's controller.
+The next Stop request incorrectly treats an active run as orphaned and can mark
+the dataset failed without cancelling its work. This fix keeps the new run
+stoppable; it does not add automatic retries or change authorization.
+
+## Offline regression coverage
+
+Install dependencies using the existing repository policy, then run:
+
+```sh
+npm ci --ignore-scripts --prefix backend
+npm install --ignore-scripts --package-lock=false --prefix frontend
+npm run test:backend
+npm test
+npm run build --prefix backend
+```
+
+`backend/tests/run-ownership.test.ts` compiles the actual background-runner
+function declarations from `src/index.ts` with synthetic I/O. Importing the
+entrypoint directly would start its server and scheduler. The fixture instead
+controls notification and status-response timing without network, credentials,
+Convex, or model calls. The tests use the production abort registry and cover:
+
+- New runs starting while each old runner finishes a successful or failed run.
+- Stopped populate cleanup followed by an independently stoppable new run.
+- Repeated Stop and cleanup, incorrect ownership, and unrelated datasets.
+
+The seven interrupted runner scenarios and registry-ownership case fail on the
+previous implementation. This is one lifecycle bug, not a separate outcome for
+each test. These synthetic checks do not establish live database transaction,
+HTTP/auth, multi-process cancellation, or browser behavior. The registry remains
+process-local. This is cancellation-registry ownership, not per-run fencing of
+Convex writes: an old runner's delayed error path can still write a failed status
+after another run starts. Distributed run leases, status-write fencing, and
+startup-claim recovery are separate concerns.

@@ -128,7 +128,7 @@ make convex-push         # deploy changes under frontend/convex
 make seed-public-datasets
 make down                # stop without deleting data
 npm test                 # launcher regression tests
-npm run test:backend     # offline refresh, capture, mutation and cell-view regressions
+npm run test:backend     # offline lifecycle, refresh, capture and cell-view regressions
 npm run build            # backend + frontend production builds
 ```
 
@@ -205,6 +205,10 @@ run is recorded as an error in run metrics.
 Run `npm run test:backend` after installing backend dependencies to verify these
 dispatch and outcome decisions offline, without credentials or model calls.
 Live workflow and Convex persistence checks require the supported local stack.
+
+Run cleanup is controller-owned, so a completed runner cannot remove the Stop
+signal for a newer run while waiting for its final notification or status
+response. See [the repeated-run cancellation contract](docs/run-cancellation.md).
 
 ### Captured cell evidence
 
