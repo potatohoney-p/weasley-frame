@@ -8,6 +8,8 @@ import { requireOpenRouterApiKey } from "../../local-credentials.js";
 import { RunMetrics } from "../run-metrics.js";
 import { saveRunMetrics } from "../save-run-metrics.js";
 import { getSignal } from "../../abort-registry.js";
+import { processWithConcurrency } from "../../pipeline/concurrency.js";
+import { refreshOutcome } from "../../pipeline/refresh-outcome.js";
 
 export const updateInputSchema = datasetContextSchema.extend({
   authContext: authContextSchema,
@@ -71,32 +73,17 @@ const refreshOutputSchema = z.object({
 
 const MAX_CONCURRENT = 5;
 
-async function processWithConcurrency<T>(
-  items: T[],
-  handler: (item: T) => Promise<void>,
-  max: number,
-): Promise<void> {
-  let idx = 0;
-  const workers = Array.from(
-    { length: Math.min(max, items.length) },
-    async () => {
-      while (idx < items.length) {
-        const i = idx++;
-        await handler(items[i]);
-      }
-    },
-  );
-  await Promise.allSettled(workers);
-}
-
 const refreshRowsStep = createStep({
   id: "refresh-rows",
   inputSchema: markAndFetchOutputSchema,
   outputSchema: refreshOutputSchema,
   execute: async ({ inputData }) => {
     const { datasetId, columns, authContext, rows } = inputData;
+    // Capture the run's signal once; a later registry entry belongs to another run.
+    const abortSignal = getSignal(datasetId);
     let updatedCount = 0;
     let errors = 0;
+    let unchangedCount = 0;
 
     const metrics = new RunMetrics();
     const startedAt = Date.now();
@@ -140,7 +127,6 @@ ${sourcesBlock}
 ${row.rowSummary ? `\nPrevious summary: ${row.rowSummary}` : ""}
 ${row.howFound ? `\nPreviously found via: ${row.howFound}` : ""}`;
 
-        const abortSignal = getSignal(datasetId);
         const result = await agent.generate(prompt, { abortSignal, maxSteps: 10 });
 
         // Accumulate token usage into the investigate tier (refresh agents map
@@ -152,14 +138,13 @@ ${row.howFound ? `\nPreviously found via: ${row.howFound}` : ""}`;
         // can misattribute chunks that arrive after the step-finish event.
         metrics.countToolCalls(result.toolCalls ?? []);
 
-        // Use a tolerant regex so variants like `"updated":true` or
-        // `updated : true` are all caught, not just the exact string
-        // "updated: true" that the agent is instructed to produce.
-        const updated = /\bupdated"?\s*:\s*true\b/i.test(result.text);
+        const { updated, failed } = refreshOutcome(result, row._id);
         if (updated) {
           updatedCount++;
           metrics.rowsUpdated++;
         }
+        if (failed) errors++;
+        if (!updated && !failed) unchangedCount++;
 
         console.log(
           `[refresh-rows] Row ${row._id}: updated=${updated} steps=${result.steps?.length ?? "?"} toolCalls=${(result.toolCalls as any[])?.length ?? "?"}`,
@@ -168,7 +153,7 @@ ${row.howFound ? `\nPreviously found via: ${row.howFound}` : ""}`;
         // Only re-throw if OUR signal was actually fired. Spurious network
         // AbortErrors must not terminate a worker — they should be counted as
         // row errors so the rest of the dataset continues refreshing.
-        if (err instanceof Error && err.name === "AbortError" && getSignal(datasetId)?.aborted) throw err;
+        if (abortSignal?.aborted) throw err;
         const msg = err instanceof Error ? err.message : String(err);
         console.error(
           `[refresh-rows] Row ${row._id} failed: ${msg}`,
@@ -182,10 +167,9 @@ ${row.howFound ? `\nPreviously found via: ${row.howFound}` : ""}`;
           });
         } catch (cleanupErr) {
           const cleanupMsg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
-          if (/not found/i.test(cleanupMsg)) {
-            return;
+          if (!/not found/i.test(cleanupMsg)) {
+            console.error(`[refresh-rows] Failed to clear update status for row ${row._id}: ${cleanupMsg}`);
           }
-          console.error(`[refresh-rows] Failed to clear update status for row ${row._id}: ${cleanupMsg}`);
         }
       }
     }
@@ -193,13 +177,12 @@ ${row.howFound ? `\nPreviously found via: ${row.howFound}` : ""}`;
     console.log(
       `[refresh-rows] Processing ${rows.length} rows (max ${MAX_CONCURRENT} concurrent)`,
     );
-    await processWithConcurrency(rows, processRow, MAX_CONCURRENT);
+    await processWithConcurrency(rows, processRow, MAX_CONCURRENT, abortSignal);
     const finishedAt = Date.now();
 
     // If the run was stopped mid-update, workers exited early via AbortError.
     // Rows that were never processed still have updateStatus:"pending".
     // Clear them now so the UI doesn't show stale shimmer indicators.
-    const abortSignal = getSignal(datasetId);
     if (abortSignal?.aborted) {
       console.log(`[refresh-rows] Run was stopped — clearing remaining pending row statuses`);
       try {
@@ -212,7 +195,7 @@ ${row.howFound ? `\nPreviously found via: ${row.howFound}` : ""}`;
     }
 
     console.log(
-      `[refresh-rows] Done: ${updatedCount} updated, ${errors} errors, ${rows.length - updatedCount - errors} unchanged`,
+      `[refresh-rows] Done: ${updatedCount} updated, ${errors} errors, ${unchangedCount} unchanged, stopped=${abortSignal?.aborted ?? false}`,
     );
 
     // Persist metrics — fire-and-forget; never block the workflow return.
@@ -226,10 +209,12 @@ ${row.howFound ? `\nPreviously found via: ${row.howFound}` : ""}`;
       // Total failure: every row errored. Partial failure: some rows errored
       // but at least one succeeded — still "success" overall, but the error
       // field records how many failed so partial issues are visible in the data.
-      status: errors > 0 && updatedCount === 0 ? "error" : "success",
-      error: errors > 0
-        ? `${errors} of ${rows.length} row(s) failed to refresh`
-        : undefined,
+      status: abortSignal?.aborted || (rows.length > 0 && errors === rows.length) ? "error" : "success",
+      error: abortSignal?.aborted
+        ? "Refresh stopped before all rows completed"
+        : errors > 0
+          ? `${errors} of ${rows.length} row(s) failed to refresh`
+          : undefined,
       workflowType: "update",
     }).catch((err) =>
       console.error(
