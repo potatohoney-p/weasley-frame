@@ -2,7 +2,6 @@ name: Offline regression tests
 
 on:
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -20,5 +19,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm ci --ignore-scripts --prefix backend
+      - run: npm ci --ignore-scripts --prefix frontend
       - run: npm test
       - run: npm run test:backend
+      - run: npm run build --prefix backend
+      - run: npx --no-install tsc --noEmit
+        working-directory: frontend

@@ -1,9 +1,31 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { convex, internal } from "../../convex.js";
-import { capture } from "../../analytics/posthog.js";
+import { anyApi as internal } from "convex/server";
+import { randomUUID } from "node:crypto";
 import { EVENTS } from "../../analytics/events.js";
 import type { AuthContext } from "../workflows/populate.js";
+import {
+  EvidenceCaptureRegistry, MAX_EVIDENCE_COLUMNS, MAX_SOURCES_PER_CELL, MAX_EXCERPT_LENGTH,
+  type CapturedEvidence,
+} from "../../pipeline/evidence-capture.js";
+
+type AnalyticsCapture = typeof import("../../analytics/posthog.js").capture;
+type DatasetToolClient = Pick<typeof import("../../convex.js").convex, "query" | "mutation">;
+export interface PopulateToolOptions {
+  evidenceRegistry?: EvidenceCaptureRegistry;
+  /** Shared with the refresh workflow; advanced only by a confirmed mutation. */
+  refreshRow?: { id: string; revision: number };
+  abortSignal?: AbortSignal;
+  dependencies?: { convex?: DatasetToolClient; capture?: AnalyticsCapture };
+}
+
+const cellEvidenceInputSchema = z.record(z.string(), z.array(z.object({
+  captureId: z.string().min(1).max(128),
+  excerpt: z.string().min(1).max(MAX_EXCERPT_LENGTH),
+}).strict()).max(MAX_SOURCES_PER_CELL)).refine(
+  value => Object.keys(value).length <= MAX_EVIDENCE_COLUMNS,
+  `cell_evidence supports at most ${MAX_EVIDENCE_COLUMNS} columns`,
+).optional();
 
 /**
  * Capability-scoped dataset tools for the populate agent.
@@ -53,17 +75,39 @@ import type { AuthContext } from "../workflows/populate.js";
 const writeResultSchema = z.object({
   success: z.boolean(),
   error: z.string().optional(),
+  rowId: z.string().optional(),
+  dataChanged: z.boolean().optional(),
+  evidenceChanged: z.boolean().optional(),
+  revision: z.number().int().nonnegative().optional(),
 });
 
 const ROW_NOT_FOUND_MSG =
   "Row not found. It may have been deleted, or the id belongs to a different dataset. Use list_rows to see valid row ids.";
 
-function cleanDataKeys(data: Record<string, unknown>): Record<string, unknown> {
-  const cleaned: Record<string, unknown> = {};
+function cleanDataKeys<T>(data: Record<string, T>): Record<string, T> {
+  const cleaned = new Map<string, T>();
   for (const [key, value] of Object.entries(data)) {
-    cleaned[key.replace(/^["`]+|["`]+$/g, "")] = value;
+    const normalized = key.replace(/^["`]+|["`]+$/g, "");
+    if (!normalized || cleaned.has(normalized)) throw new Error("Invalid or colliding normalized column keys");
+    cleaned.set(normalized, value);
   }
-  return cleaned;
+  return Object.fromEntries(cleaned);
+}
+
+function resolveEvidence(
+  data: Record<string, unknown>,
+  supplied: Record<string, { captureId: string; excerpt: string }[]> | undefined,
+  registry?: EvidenceCaptureRegistry,
+): Record<string, CapturedEvidence[]> | undefined {
+  if (supplied === undefined) return undefined;
+  if (!registry) throw new Error("Cell evidence requires this run's capture registry");
+  const cleaned = cleanDataKeys(supplied);
+  if (Object.keys(cleaned).length > MAX_EVIDENCE_COLUMNS) throw new Error("Too many evidence columns");
+  return Object.fromEntries(Object.entries(cleaned).map(([column, references]) => {
+    if (!Object.hasOwn(data, column)) throw new Error(`Evidence column is missing from row data: ${column}`);
+    if (references.length > MAX_SOURCES_PER_CELL) throw new Error("Too many sources for one cell");
+    return [column, references.map(reference => registry.resolve(reference.captureId, reference.excerpt))];
+  }));
 }
 
 /**
@@ -77,15 +121,16 @@ function cleanDataKeys(data: Record<string, unknown>): Record<string, unknown> {
  * the attempt (userId + workflowRunId) and pinpoint what was tried
  * (operation + ids).
  */
-function recordCapabilityViolation(params: {
+async function recordCapabilityViolation(params: {
   operation: "get_row" | "update_row" | "delete_row";
   authorizedDatasetId: string;
   attemptedRowId: string;
   authContext: AuthContext;
-}): void {
+}, captureEvent?: AnalyticsCapture): Promise<void> {
   console.warn(
     `[capability-violation] op=${params.operation} user=${params.authContext.authorizedUserId} run=${params.authContext.workflowRunId} dataset=${params.authorizedDatasetId} rowId=${params.attemptedRowId}`,
   );
+  const capture = captureEvent ?? (await import("../../analytics/posthog.js")).capture;
   capture({
     distinctId: params.authContext.authorizedUserId,
     event: EVENTS.CAPABILITY_VIOLATION,
@@ -102,6 +147,7 @@ function recordCapabilityViolation(params: {
 export function buildPopulateTools(
   authorizedDatasetId: string,
   authContext: AuthContext,
+  options: PopulateToolOptions = {},
 ) {
   if (!authorizedDatasetId) {
     // Fail loud at construction time — never silently fall back to an
@@ -120,6 +166,13 @@ export function buildPopulateTools(
   // Short prefix used in every tool's structured log line so a run's
   // entries can be grep'd together in the backend logs without parsing.
   const logCtx = `user=${authContext.authorizedUserId} run=${authContext.workflowRunId} dataset=${authorizedDatasetId}`;
+  const client = async () => options.dependencies?.convex ?? (await import("../../convex.js")).convex;
+  const assertActive = () => {
+    if (options.abortSignal?.aborted) throw new Error("Operation cancelled before persistence");
+  };
+  if (options.evidenceRegistry && options.evidenceRegistry.runId !== authContext.workflowRunId) {
+    throw new Error("Evidence registry belongs to a different workflow run");
+  }
 
   const insertRowTool = createTool({
     id: "insert_row",
@@ -127,6 +180,7 @@ export function buildPopulateTools(
       "Insert a single row into the dataset you are populating. Call this each time you have a row ready — don't wait to batch them.",
     inputSchema: z.object({
       data: z.record(z.string(), z.any()),
+      cell_evidence: cellEvidenceInputSchema,
       sources: z
         .array(z.string())
         .optional()
@@ -141,7 +195,7 @@ export function buildPopulateTools(
         .describe("Brief description of how you found and verified this data"),
     }),
     outputSchema: writeResultSchema,
-    execute: async ({ data, sources, row_summary, how_found }) => {
+    execute: async ({ data, sources, row_summary, how_found, cell_evidence }) => {
       if (!data || Object.keys(data).length === 0)
         return {
           success: false,
@@ -149,19 +203,22 @@ export function buildPopulateTools(
             'data is required and must have at least one key. Pass an object like { "Column Name": value }.',
         };
 
-      const cleanedData = cleanDataKeys(data);
-      console.log(
-        `[insert_row] ${logCtx} cols=${Object.keys(cleanedData).length} sources=${sources?.length ?? 0}`,
-      );
       try {
-        await convex.mutation(internal.datasetRows.insert, {
+        assertActive();
+        const cleanedData = cleanDataKeys(data);
+        const cellEvidence = resolveEvidence(cleanedData, cell_evidence, options.evidenceRegistry);
+        const convex = await client();
+        assertActive();
+        const rowId = await convex.mutation(internal.datasetRows.insert, {
           datasetId: authorizedDatasetId,
           data: cleanedData,
+          operationId: randomUUID(),
+          ...(cellEvidence !== undefined ? { cellEvidence } : {}),
           ...(sources !== undefined ? { sources } : {}),
           ...(row_summary !== undefined ? { rowSummary: row_summary } : {}),
           ...(how_found !== undefined ? { howFound: how_found } : {}),
         });
-        return { success: true };
+        return { success: true, ...(typeof rowId === "string" ? { rowId } : {}) };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[insert_row] Failed: ${logCtx} err=${msg}`);
@@ -197,7 +254,7 @@ export function buildPopulateTools(
     execute: async () => {
       console.log(`[list_rows] ${logCtx}`);
       try {
-        const rows = await convex.query(internal.datasetRows.listInternal, {
+        const rows = await (await client()).query(internal.datasetRows.listInternal, {
           datasetId: authorizedDatasetId,
         });
         return { rows };
@@ -225,7 +282,7 @@ export function buildPopulateTools(
 
       console.log(`[get_row] ${logCtx} row=${rowId}`);
       try {
-        const row = await convex.query(internal.datasetRows.get, { id: rowId });
+        const row = await (await client()).query(internal.datasetRows.get, { id: rowId });
         // Existence + ownership are collapsed into ONE uniform error so
         // the LLM (or a prompt-injecting page) can't probe row ids across
         // datasets. Cross-dataset row → same response as "doesn't exist".
@@ -233,12 +290,12 @@ export function buildPopulateTools(
         // capability-violation event; a truly missing row does not.
         if (!row) return { error: ROW_NOT_FOUND_MSG };
         if (row.datasetId !== authorizedDatasetId) {
-          recordCapabilityViolation({
+          await recordCapabilityViolation({
             operation: "get_row",
             authorizedDatasetId,
             attemptedRowId: rowId,
             authContext,
-          });
+          }, options.dependencies?.capture);
           return { error: ROW_NOT_FOUND_MSG };
         }
         return { row };
@@ -261,6 +318,7 @@ export function buildPopulateTools(
     inputSchema: z.object({
       rowId: z.string(),
       data: z.record(z.string(), z.any()),
+      cell_evidence: cellEvidenceInputSchema,
       sources: z
         .array(z.string())
         .optional()
@@ -275,7 +333,7 @@ export function buildPopulateTools(
         .describe("Brief description of how the updated data was found"),
     }),
     outputSchema: writeResultSchema,
-    execute: async ({ rowId, data, sources, row_summary, how_found }) => {
+    execute: async ({ rowId, data, sources, row_summary, how_found, cell_evidence }) => {
       if (!rowId) return { success: false, error: "rowId is required." };
       if (!data || Object.keys(data).length === 0)
         return {
@@ -283,20 +341,36 @@ export function buildPopulateTools(
           error: "data is required. Pass the full updated row data object.",
         };
 
-      const cleanedData = cleanDataKeys(data);
-      console.log(
-        `[update_row] ${logCtx} row=${rowId} cols=${Object.keys(cleanedData).length}`,
-      );
       try {
-        await convex.mutation(internal.datasetRows.update, {
+        assertActive();
+        if (options.refreshRow && options.refreshRow.id !== rowId) throw new Error("Row not found");
+        const cleanedData = cleanDataKeys(data);
+        const cellEvidence = resolveEvidence(cleanedData, cell_evidence, options.evidenceRegistry);
+        const convex = await client();
+        const row = await convex.query(internal.datasetRows.get, { id: rowId });
+        if (!row || row.datasetId !== authorizedDatasetId) throw new Error("Row not found");
+        const expectedRevision = options.refreshRow?.revision ?? row.revision ?? 0;
+        assertActive();
+        const result = await convex.mutation(internal.datasetRows.update, {
           id: rowId,
           expectedDatasetId: authorizedDatasetId,
+          expectedRevision,
+          operationId: randomUUID(),
           data: cleanedData,
+          ...(cellEvidence !== undefined ? { cellEvidence } : {}),
           ...(sources !== undefined ? { sources } : {}),
           ...(row_summary !== undefined ? { rowSummary: row_summary } : {}),
           ...(how_found !== undefined ? { howFound: how_found } : {}),
         });
-        return { success: true };
+        if (result && typeof result.dataChanged === "boolean" &&
+          typeof result.evidenceChanged === "boolean" && Number.isSafeInteger(result.revision) && result.revision >= 0) {
+          if (options.refreshRow) options.refreshRow.revision = result.revision;
+          return {
+            success: true, dataChanged: result.dataChanged, evidenceChanged: result.evidenceChanged,
+            revision: result.revision,
+          };
+        }
+        return { success: false, error: "Write outcome unconfirmed: persistence did not return valid change metadata. The row may have been written." };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[update_row] Failed: ${logCtx} row=${rowId} err=${msg}`);
@@ -305,12 +379,12 @@ export function buildPopulateTools(
           // collapses them on purpose. Treat both as worth surfacing:
           // a populate run that keeps hitting deleted rows is also a
           // signal worth seeing in the dashboard.
-          recordCapabilityViolation({
+          await recordCapabilityViolation({
             operation: "update_row",
             authorizedDatasetId,
             attemptedRowId: rowId,
             authContext,
-          });
+          }, options.dependencies?.capture);
           return { success: false, error: ROW_NOT_FOUND_MSG };
         }
         if (msg.includes("Quota") || msg.includes("quota"))
@@ -340,6 +414,9 @@ export function buildPopulateTools(
 
       console.log(`[delete_row] ${logCtx} row=${rowId}`);
       try {
+        assertActive();
+        const convex = await client();
+        assertActive();
         await convex.mutation(internal.datasetRows.remove, {
           id: rowId,
           expectedDatasetId: authorizedDatasetId,
@@ -349,12 +426,12 @@ export function buildPopulateTools(
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[delete_row] Failed: ${logCtx} row=${rowId} err=${msg}`);
         if (msg.includes("Row not found") || msg.includes("not found")) {
-          recordCapabilityViolation({
+          await recordCapabilityViolation({
             operation: "delete_row",
             authorizedDatasetId,
             attemptedRowId: rowId,
             authContext,
-          });
+          }, options.dependencies?.capture);
           return { success: false, error: ROW_NOT_FOUND_MSG };
         }
         if (msg.includes("validator") || msg.includes("Invalid"))

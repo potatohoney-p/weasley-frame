@@ -104,11 +104,13 @@ export function buildSubagentTool(
           `[run_subagent] spawning subagent user=${authContext.authorizedUserId} run=${authContext.workflowRunId} dataset=${authorizedDatasetId} entity="${entity_hint}" pk=${JSON.stringify(primary_keys)}`,
         );
 
+        const abortSignal = getSignal(authorizedDatasetId);
         const agent = buildInvestigateAgent(
           authorizedDatasetId,
           authContext,
           columns,
           openRouterApiKey,
+          abortSignal,
         );
 
         const pkBlock = Object.entries(primary_keys)
@@ -130,7 +132,6 @@ ${pkBlock}
 Context (partial data already found):
 ${context}${urlsBlock}${notesBlock}`;
 
-        const abortSignal = getSignal(authorizedDatasetId);
         const result = await agent.generate(prompt, { abortSignal, maxSteps: 25 });
         if (metrics) {
           // Use result.toolCalls (the flat accumulated list across all steps) rather

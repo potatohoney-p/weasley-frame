@@ -9,7 +9,7 @@ import { RunMetrics } from "../run-metrics.js";
 import { saveRunMetrics } from "../save-run-metrics.js";
 import { getSignal } from "../../abort-registry.js";
 import { processWithConcurrency } from "../../pipeline/concurrency.js";
-import { refreshOutcome, refreshRunOutcome } from "../../pipeline/refresh-outcome.js";
+import { finishRefreshObservation, refreshRunOutcome } from "../../pipeline/refresh-outcome.js";
 
 export const updateInputSchema = datasetContextSchema.extend({
   authContext: authContextSchema,
@@ -22,6 +22,7 @@ const rowSchema = z.object({
   sources: z.array(z.string()).optional(),
   rowSummary: z.string().optional(),
   howFound: z.string().optional(),
+  revision: z.number().optional(),
 });
 
 const markAndFetchOutputSchema = updateInputSchema.extend({
@@ -53,6 +54,7 @@ const markAndFetchStep = createStep({
       sources: r.sources as string[] | undefined,
       rowSummary: r.rowSummary as string | undefined,
       howFound: r.howFound as string | undefined,
+      revision: typeof r.revision === "number" ? r.revision : 0,
     }));
 
     if (selective) {
@@ -93,11 +95,15 @@ const refreshRowsStep = createStep({
 
     async function processRow(row: z.infer<typeof rowSchema>) {
       try {
+        // The tool advances this revision only after a confirmed write. A
+        // concurrent edit must invalidate this refresh's original snapshot.
+        const refreshRow = { id: row._id, revision: row.revision ?? 0 };
         const agent = buildRefreshAgent(
           datasetId,
           authContext,
           columns,
           openRouterApiKey,
+          { refreshRow, abortSignal },
         );
 
         const pkBlock =
@@ -138,7 +144,18 @@ ${row.howFound ? `\nPreviously found via: ${row.howFound}` : ""}`;
         // can misattribute chunks that arrive after the step-finish event.
         metrics.countToolCalls(result.toolCalls ?? []);
 
-        const { updated, failed } = refreshOutcome(result, row._id);
+        // A completed attempt can have no captured observations (404, blocked
+        // sources, or an unchanged value with no citation). Do not advance
+        // freshness after cancellation, a stream failure or a rejected write.
+        const { updated, failed } = await finishRefreshObservation(result, row._id, abortSignal, async () => {
+          const completion = await convex.mutation(internal.datasetRows.completeEvidenceRefresh, {
+            id: row._id,
+            expectedDatasetId: datasetId,
+            expectedRevision: refreshRow.revision,
+            runId: authContext.workflowRunId,
+          });
+          refreshRow.revision = completion.revision;
+        });
         if (updated) {
           updatedCount++;
           metrics.rowsUpdated++;

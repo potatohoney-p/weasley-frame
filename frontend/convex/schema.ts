@@ -1,5 +1,9 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  cellEvidenceValidator, creationOperationValidator,
+  lastEvidenceRefreshValidator, lastWriteValidator,
+} from "./lib/cell-evidence.js";
 
 export default defineSchema({
   datasets: defineTable({
@@ -89,6 +93,12 @@ export default defineSchema({
     howFound: v.optional(v.string()),
     updateStatus: v.optional(v.literal("pending")),
     scrapeScript: v.optional(v.string()),
+    // Additive: legacy rows have no captured evidence and revision zero.
+    cellEvidence: v.optional(cellEvidenceValidator),
+    revision: v.optional(v.number()),
+    lastEvidenceRefresh: v.optional(lastEvidenceRefreshValidator),
+    lastWrite: v.optional(lastWriteValidator),
+    creationOperation: v.optional(creationOperationValidator),
   })
     .index("by_dataset", ["datasetId"])
     // Compound index used by clearAllPendingUpdateStatus to scan only the rows

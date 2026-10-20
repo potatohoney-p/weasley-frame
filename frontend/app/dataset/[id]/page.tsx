@@ -9,7 +9,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { DatasetTable } from "@/components/table";
 import { useSelection } from "@/components/table/use-selection";
 import { SideSheet, CellDetail } from "@/components/SideSheet";
-import type { DatasetColumn } from "@/components/table/types";
+import { getCellDetailView, type SelectedCell } from "@/lib/cell-evidence-view";
 import { useTheme } from "@/components/ThemeToggle";
 import { StatusBadge } from "@/components/dataset/StatusBadge";
 import { BrandMark } from "@/components/BrandMark";
@@ -40,11 +40,7 @@ export default function DatasetPage() {
   const [savingRefreshCadence, setSavingRefreshCadence] = useState(false);
   const [savingMaxRowCount, setSavingMaxRowCount] = useState(false);
   const [maxRowCountSaveError, setMaxRowCountSaveError] = useState<string | null>(null);
-  const [cellDetail, setCellDetail] = useState<{
-    column: DatasetColumn;
-    value: unknown;
-    sources?: string[];
-  } | null>(null);
+  const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
 
   const datasetId = params.id as Id<"datasets">;
   const dataset = useQuery(
@@ -54,6 +50,10 @@ export default function DatasetPage() {
   const rows = useQuery(
     api.datasetRows.listByDataset,
     authLoading ? "skip" : { datasetId },
+  );
+  const cellDetail = useMemo(
+    () => getCellDetailView(selectedCell, dataset?.columns, rows),
+    [selectedCell, dataset?.columns, rows],
   );
   const updateRefreshSettings = useMutation(api.datasets.updateRefreshSettings);
   const updateMaxRowCount = useMutation(api.datasets.updateMaxRowCount);
@@ -99,13 +99,9 @@ export default function DatasetPage() {
     }
   }, [dataset, populating, getToken]);
 
-  const handleCellExpand = useCallback((columnName: string, value: unknown, rowId: string) => {
-    if (!dataset || !rows) return;
-    const col = dataset.columns.find((c) => c.name === columnName);
-    if (!col) return;
-    const row = rows.find((r) => r._id === rowId);
-    setCellDetail({ column: col, value, sources: row?.sources });
-  }, [dataset, rows]);
+  const handleCellExpand = useCallback((columnName: string, _value: unknown, rowId: string) => {
+    setSelectedCell({ rowId, columnName });
+  }, []);
 
   const openedFired = useRef<string | null>(null);
   const autoPopulateFired = useRef<string | null>(null);
@@ -456,12 +452,11 @@ export default function DatasetPage() {
         onCellExpand={handleCellExpand}
       />
 
-      <SideSheet open={cellDetail !== null} onClose={() => setCellDetail(null)}>
+      <SideSheet open={cellDetail !== null} onClose={() => setSelectedCell(null)}>
         {cellDetail && (
           <CellDetail
-            column={cellDetail.column}
-            value={cellDetail.value}
-            sources={cellDetail.sources}
+            key={`${cellDetail.rowId}:${cellDetail.column.name}`}
+            {...cellDetail}
           />
         )}
       </SideSheet>

@@ -128,7 +128,7 @@ make convex-push         # deploy changes under frontend/convex
 make seed-public-datasets
 make down                # stop without deleting data
 npm test                 # launcher regression tests
-npm run test:backend     # offline refresh cancellation + write-result regressions
+npm run test:backend     # offline refresh, capture, mutation and cell-view regressions
 npm run build            # backend + frontend production builds
 ```
 
@@ -187,7 +187,7 @@ when a command, environment variable, or architecture boundary changes.
 
 ## Roadmap
 
-- Per-cell provenance views
+- Extended provenance history and derived-value lineage
 - Incremental refreshes
 - SQL query support
 - Browser automation for interaction-heavy sources
@@ -205,6 +205,20 @@ run is recorded as an error in run metrics.
 Run `npm run test:backend` after installing backend dependencies to verify these
 dispatch and outcome decisions offline, without credentials or model calls.
 Live workflow and Convex persistence checks require the supported local stack.
+
+### Captured cell evidence
+
+The cell drawer shows column-specific excerpts captured by the research tools,
+with source URL, page/snippet kind and capture time. Changed values invalidate
+old evidence; unchanged values can record fresh observations without increasing
+the changed-row count. Legacy row links remain separate and do not imply that a
+particular cell has captured support.
+
+This records observed source text, not factual correctness. See
+[the capture, retry and compatibility contract](docs/cell-evidence.md) for
+storage bounds, mutation behavior and offline verification limits. Backend
+regressions now require both frontend and backend dependencies because they
+exercise the actual Convex handlers and render the cell drawer.
 
 ## License
 

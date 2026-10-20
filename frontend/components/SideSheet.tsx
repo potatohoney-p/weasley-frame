@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import type { DatasetColumn } from "@/components/table/types";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import type { CellDetailView } from "@/lib/cell-evidence-view";
 
 function IconX() {
   return (
@@ -59,7 +59,7 @@ export function SideSheet({ open, onClose, children }: SideSheetProps) {
     const panel = panelRef.current;
 
     const focusable = panel.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      'button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])',
     );
     focusable[0]?.focus();
 
@@ -114,12 +114,7 @@ export function SideSheet({ open, onClose, children }: SideSheetProps) {
 /*  Content                                                             */
 /* ------------------------------------------------------------------ */
 
-interface CellDetailProps {
-  column: DatasetColumn;
-  value: unknown;
-  /** Row-level sources stored by the populate agent. */
-  sources?: string[];
-}
+type CellDetailProps = Omit<CellDetailView, "rowId">;
 
 function isValidHttpUrl(src: string): boolean {
   try {
@@ -130,7 +125,29 @@ function isValidHttpUrl(src: string): boolean {
   }
 }
 
-export function CellDetail({ column, value, sources }: CellDetailProps) {
+function SourceLink({ url }: { url: string }) {
+  return isValidHttpUrl(url) ? (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-start gap-1.5 text-xs text-link hover:underline break-all"
+      data-ph-mask-text="true"
+    >
+      <span className="mt-0.5 shrink-0"><IconExternalLink /></span>
+      {url}
+    </a>
+  ) : (
+    <span className="text-xs text-muted break-all" data-ph-mask-text="true">{url}</span>
+  );
+}
+
+function captureTime(timestamp: number): string | undefined {
+  const date = new Date(timestamp);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+}
+
+export function CellDetail({ column, value, evidence, rowLinks, latestRefresh }: CellDetailProps) {
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const displayValue = value == null || value === "" ? "—" : String(value);
@@ -192,32 +209,68 @@ export function CellDetail({ column, value, sources }: CellDetailProps) {
         </div>
       </div>
 
-      {/* Sources */}
-      {sources && sources.length > 0 && (
+      <section aria-label="Captured evidence" className="space-y-3">
+        <div>
+          <h3 className="text-[11px] font-medium text-muted uppercase tracking-wide">
+            Captured evidence
+          </h3>
+          <p className="text-xs text-muted mt-1">
+            A capture records what was observed; it does not verify this value.
+          </p>
+        </div>
+        {evidence.length === 0 ? (
+          <p className="text-sm text-muted">No captured evidence</p>
+        ) : (
+          <ul className="space-y-3">
+            {evidence.map((source, index) => (
+              <li key={`${source.runId}:${source.captureId}:${index}`} className="rounded-lg border border-border p-3 space-y-2">
+                <p className="text-xs font-medium text-foreground">
+                  {source.kind === "search_snippet" ? "Search snippet" : "Page capture"}
+                </p>
+                <blockquote className="border-l-2 border-border pl-3 text-sm text-foreground whitespace-pre-wrap break-words" data-ph-mask-text="true">
+                  {source.excerpt}
+                </blockquote>
+                <SourceLink url={source.url} />
+                <p className="text-xs text-muted">
+                  Captured <time dateTime={captureTime(source.capturedAt)}>{captureTime(source.capturedAt) ?? "at an unknown time"}</time>
+                </p>
+                <details className="text-xs text-muted">
+                  <summary className="cursor-pointer">Capture details</summary>
+                  <dl className="mt-2 space-y-1 break-all" data-ph-mask-text="true">
+                    <div><dt className="font-medium">SHA-256</dt><dd>{source.contentSha256}</dd></div>
+                    <div><dt className="font-medium">Capture ID</dt><dd>{source.captureId}</dd></div>
+                    <div><dt className="font-medium">Run ID</dt><dd>{source.runId}</dd></div>
+                  </dl>
+                </details>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="rounded-lg bg-background p-3 text-xs text-muted">
+          <p className="font-medium">Latest completed evidence refresh</p>
+          {latestRefresh ? (
+            <>
+              <p className="mt-1">{latestRefresh.observed ? "Captured for this value" : "Not observed for this value"}</p>
+              <time dateTime={captureTime(latestRefresh.completedAt)}>
+                {captureTime(latestRefresh.completedAt) ?? "Completion time unavailable"}
+              </time>
+            </>
+          ) : <p className="mt-1">No completed evidence refresh</p>}
+        </div>
+      </section>
+
+      {rowLinks.length > 0 && (
         <div>
           <p className="text-[11px] font-medium text-muted uppercase tracking-wide mb-1.5">
-            Sources
+            Row links
+          </p>
+          <p className="text-xs text-muted mb-2">
+            Links associated with the row, not evidence for this cell.
           </p>
           <ul className="space-y-1.5">
-            {sources.map((src, i) => (
+            {rowLinks.map((src, i) => (
               <li key={src || i}>
-                {isValidHttpUrl(src) ? (
-                  <a
-                    href={src}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-start gap-1.5 text-xs text-link hover:underline break-all"
-                    data-ph-mask-text="true"
-                  >
-                    <span className="mt-0.5 shrink-0"><IconExternalLink /></span>
-                    {src}
-                  </a>
-                ) : (
-                  <span className="flex items-start gap-1.5 text-xs text-muted break-all" data-ph-mask-text="true">
-                    <span className="mt-0.5 shrink-0"><IconExternalLink /></span>
-                    {src}
-                  </span>
-                )}
+                <SourceLink url={src} />
               </li>
             ))}
           </ul>

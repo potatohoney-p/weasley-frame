@@ -1,11 +1,25 @@
 import { query, internalMutation, internalQuery } from "./_generated/server.js";
 import type { MutationCtx } from "./_generated/server.js";
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel.js";
+import type { Doc, Id } from "./_generated/dataModel.js";
 import { assertRowInDataset, loadReadableDataset } from "./lib/authz.js";
 import { consumeQuotaForDataset } from "./lib/quota.js";
+import {
+  assertExpectedRevision, cellEvidenceInputValidator, cellValuesEqual,
+  cellValueKey, evidenceEqual, nextRowRevision, operationPayloadKey,
+  reconcileCellEvidence, rowDataEqual, rowRevision, validateOperationId,
+} from "./lib/cell-evidence.js";
 
 const DEFAULT_MAX_DATASET_ROWS = 100;
+
+/** Omitted metadata is distinct from an explicit replacement in retry payloads. */
+function writePayload(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    ["data", "sources", "rowSummary", "howFound", "cellEvidence", "expectedRevision"]
+      .filter((key) => args[key] !== undefined)
+      .map((key) => [key, args[key]]),
+  );
+}
 
 /**
  * Authoritative row count for a dataset. O(N), so use only on the slow
@@ -84,10 +98,32 @@ export const insert = internalMutation({
     sources: v.optional(v.array(v.string())),
     rowSummary: v.optional(v.string()),
     howFound: v.optional(v.string()),
+    cellEvidence: v.optional(cellEvidenceInputValidator),
+    operationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const dataset = await ctx.db.get(args.datasetId);
     if (!dataset) throw new Error("Dataset not found");
+
+    const cellEvidence = reconcileCellEvidence(args.data, undefined, args.cellEvidence);
+    let creationOperation: { operationId: string; payloadKey: string } | undefined;
+    let existingRows: Doc<"datasetRows">[] | undefined;
+    if (args.operationId !== undefined) {
+      validateOperationId(args.operationId);
+      creationOperation = {
+        operationId: args.operationId,
+        payloadKey: operationPayloadKey(writePayload(args)),
+      };
+      existingRows = await ctx.db.query("datasetRows")
+        .withIndex("by_dataset", (q) => q.eq("datasetId", args.datasetId)).collect();
+      const replay = existingRows.find((row) => row.creationOperation?.operationId === args.operationId);
+      if (replay?.creationOperation) {
+        if (replay.creationOperation.payloadKey !== creationOperation.payloadKey) {
+          throw new Error("Creation operation conflict: the operation id has a different payload");
+        }
+        return replay._id;
+      }
+    }
 
     const previousCount =
       typeof dataset.rowCount === "number"
@@ -106,7 +142,7 @@ export const insert = internalMutation({
       (c: { isPrimaryKey?: boolean }) => c.isPrimaryKey,
     );
     if (pkColumns.length > 0) {
-      const existingRows = await ctx.db
+      existingRows ??= await ctx.db
         .query("datasetRows")
         .withIndex("by_dataset", (q) => q.eq("datasetId", args.datasetId))
         .collect();
@@ -139,7 +175,16 @@ export const insert = internalMutation({
     // Quota consumption only happens for genuine new rows.
     await consumeQuotaForDataset(ctx, args.datasetId, 1);
 
-    const rowId = await ctx.db.insert("datasetRows", args);
+    const rowId = await ctx.db.insert("datasetRows", {
+      datasetId: args.datasetId,
+      data: args.data,
+      ...(args.sources !== undefined ? { sources: args.sources } : {}),
+      ...(args.rowSummary !== undefined ? { rowSummary: args.rowSummary } : {}),
+      ...(args.howFound !== undefined ? { howFound: args.howFound } : {}),
+      revision: 1,
+      ...(cellEvidence ? { cellEvidence } : {}),
+      ...(creationOperation ? { creationOperation } : {}),
+    });
 
     await ctx.db.patch(args.datasetId, { rowCount: previousCount + 1 });
 
@@ -169,6 +214,9 @@ export const update = internalMutation({
     sources: v.optional(v.array(v.string())),
     rowSummary: v.optional(v.string()),
     howFound: v.optional(v.string()),
+    cellEvidence: v.optional(cellEvidenceInputValidator),
+    expectedRevision: v.optional(v.number()),
+    operationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await assertRowInDataset(
@@ -177,13 +225,51 @@ export const update = internalMutation({
       args.expectedDatasetId,
     );
 
-    await consumeQuotaForDataset(ctx, args.expectedDatasetId, 1);
-
     const oldData = existing.data as Record<string, unknown>;
     const newData = args.data;
-    for (const [key, newVal] of Object.entries(newData)) {
+    const currentRevision = rowRevision(existing.revision);
+    let operation: { operationId: string; payloadKey: string } | undefined;
+    if (args.operationId !== undefined) {
+      validateOperationId(args.operationId);
+      if (args.expectedRevision === undefined) {
+        throw new Error("Operation-tagged updates require an expected revision");
+      }
+      operation = {
+        operationId: args.operationId,
+        payloadKey: operationPayloadKey(writePayload(args)),
+      };
+      if (existing.lastWrite?.operationId === operation.operationId) {
+        if (existing.lastWrite.payloadKey !== operation.payloadKey) {
+          throw new Error("Write operation conflict: the operation id has a different payload");
+        }
+        if (existing.lastWrite.revision !== currentRevision) {
+          throw new Error("Stale row revision. Reload the row before writing.");
+        }
+        return {
+          dataChanged: existing.lastWrite.dataChanged,
+          evidenceChanged: existing.lastWrite.evidenceChanged,
+          revision: existing.lastWrite.revision,
+        };
+      }
+    }
+    assertExpectedRevision(currentRevision, args.expectedRevision);
+    const revision = nextRowRevision(currentRevision);
+    const cellEvidence = reconcileCellEvidence(newData, existing.cellEvidence, args.cellEvidence);
+    const result = {
+      dataChanged: !rowDataEqual(oldData, newData),
+      evidenceChanged: !evidenceEqual(existing.cellEvidence, cellEvidence),
+      revision,
+    };
+
+    // Accepted evidence-only updates still charge once, like any existing update.
+    // Replays and rejected evidence/revisions have returned before this boundary.
+    await consumeQuotaForDataset(ctx, args.expectedDatasetId, 1);
+
+    for (const key of new Set([...Object.keys(oldData), ...Object.keys(newData)])) {
       const oldVal = oldData[key];
-      if (String(oldVal) !== String(newVal)) {
+      const newVal = newData[key];
+      if (Object.hasOwn(oldData, key) !== Object.hasOwn(newData, key)
+        || !cellValuesEqual(oldVal, newVal)) {
         await ctx.db.insert("datasetHistory", {
           datasetRowId: args.id,
           columnName: key,
@@ -197,11 +283,46 @@ export const update = internalMutation({
     const patch: Record<string, unknown> = {
       data: newData,
       updateStatus: undefined,
+      revision,
+      cellEvidence,
+      lastWrite: operation ? { ...operation, ...result } : undefined,
     };
     if (args.sources !== undefined) patch.sources = args.sources;
     if (args.rowSummary !== undefined) patch.rowSummary = args.rowSummary;
     if (args.howFound !== undefined) patch.howFound = args.howFound;
     await ctx.db.patch(args.id, patch);
+    return result;
+  },
+});
+
+/**
+ * Completion records observations, not factual verification. It never advances
+ * capture timestamps or fabricates evidence for fields the run did not observe.
+ */
+export const completeEvidenceRefresh = internalMutation({
+  args: {
+    id: v.id("datasetRows"),
+    expectedDatasetId: v.id("datasets"),
+    expectedRevision: v.number(),
+    runId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await assertRowInDataset(ctx, args.id, args.expectedDatasetId);
+    validateOperationId(args.runId);
+    const currentRevision = rowRevision(existing.revision);
+    assertExpectedRevision(currentRevision, args.expectedRevision);
+    const revision = nextRowRevision(currentRevision);
+    const observedColumns = Object.entries(existing.cellEvidence ?? {})
+      .filter(([column, evidence]) => Object.hasOwn(existing.data, column)
+        && cellValueKey(existing.data[column]) === evidence.valueKey
+        && evidence.sources.some((source) => source.runId === args.runId))
+      .map(([column]) => column)
+      .sort();
+    await ctx.db.patch(args.id, {
+      revision,
+      lastEvidenceRefresh: { runId: args.runId, completedAt: Date.now(), observedColumns },
+    });
+    return { revision };
   },
 });
 

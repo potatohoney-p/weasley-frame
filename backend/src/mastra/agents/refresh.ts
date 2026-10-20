@@ -1,7 +1,8 @@
 import { Agent } from "@mastra/core/agent";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { buildPopulateTools } from "../tools/dataset-tools.js";
-import { searchWebTool, fetchPageTool } from "../tools/web-tools.js";
+import { buildPopulateTools, type PopulateToolOptions } from "../tools/dataset-tools.js";
+import { buildEvidenceWebTools } from "../tools/web-tools.js";
+import { EvidenceCaptureRegistry } from "../../pipeline/evidence-capture.js";
 import type { AuthContext } from "../workflows/populate.js";
 import type { PopulateColumn } from "../../pipeline/populate.js";
 
@@ -27,8 +28,9 @@ RULES:
 - Compare the fetched data with the existing row data carefully.
 - If data has MEANINGFULLY changed (not just formatting differences), call update_row with the FULL updated data object (all columns, not just changed ones), plus updated sources, row_summary, and how_found.
 - If NO sources work (all 404/blocked), try ONE web search using the primary key values to find a current source.
-- If the data is unchanged, do NOT call update_row. Just report your findings.
+- If the data is unchanged but you captured fresh support, call update_row with unchanged values and cell_evidence for the observed columns. This records an observation without counting a data change.
 - Never fabricate values. If you can't verify a field, keep the existing value.
+- Evidence must reference captureId values from your own search_web or fetch_page results with exact, short excerpts from source text. Do not cite old context prose or a generated truncation notice. Omit evidence for fields you could not observe. Captures do not prove factual correctness.
 
 TOOL CALL FORMAT — every tool call argument must be a JSON object wrapped in curly braces:
   fetch_page: {"url": "https://example.com"}
@@ -39,6 +41,7 @@ WORKFLOW:
 1. Fetch the provided source URLs (1-2 calls).
 2. Compare fetched data with existing row data.
 3. If changed: call update_row with the full updated data.
+   For observed columns add "cell_evidence": {"Column Name": [{"captureId": "<returned captureId>", "excerpt": "<exact source text>"}]}. Do this also for unchanged values that you observed again.
    If sources broken: try ONE search using primary key values, then fetch the best result.
 4. Write your final response:
    UPDATED: true/false
@@ -52,15 +55,18 @@ export function buildRefreshAgent(
   authContext: AuthContext,
   columns: PopulateColumn[],
   openRouterApiKey: string,
+  options: Pick<PopulateToolOptions, "refreshRow" | "abortSignal"> = {},
 ): Agent {
   const modelSlug = authContext.modelConfig!.investigateSubagent;
   const openrouter = createOpenRouter({
     apiKey: openRouterApiKey,
     baseURL: process.env.OPENROUTER_BASE_URL,
   });
+  const evidenceRegistry = new EvidenceCaptureRegistry(authContext.workflowRunId);
   const { update_row } = buildPopulateTools(
     authorizedDatasetId,
     authContext,
+    { ...options, evidenceRegistry },
   );
   return new Agent({
     id: "refresh-agent",
@@ -69,8 +75,7 @@ export function buildRefreshAgent(
     model: openrouter(modelSlug),
     tools: {
       update_row,
-      search_web: searchWebTool,
-      fetch_page: fetchPageTool,
+      ...buildEvidenceWebTools(evidenceRegistry, { abortSignal: options.abortSignal }),
     },
   });
 }
