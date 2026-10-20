@@ -203,7 +203,8 @@ run with errors and unchanged rows remains a partial success, while a stopped
 run is recorded as an error in run metrics.
 
 Run `npm run test:backend` after installing backend dependencies to verify these
-behaviors offline, without provider credentials, a database, or model calls.
+dispatch and outcome decisions offline, without credentials or model calls.
+Live workflow and Convex persistence checks require the supported local stack.
 
 ## License
 

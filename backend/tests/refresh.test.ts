@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { processWithConcurrency } from "../src/pipeline/concurrency.js";
-import { refreshOutcome } from "../src/pipeline/refresh-outcome.js";
+import { refreshOutcome, refreshRunOutcome } from "../src/pipeline/refresh-outcome.js";
 
 function deferred() {
   let resolve!: () => void;
@@ -118,6 +118,30 @@ test("a successful retry resolves earlier failed attempts and counts once", () =
     toolCalls: [call("first"), call("retry"), call("again")],
     toolResults: [result("first", false), result("retry", true), result("again", true)],
   }, "row-a"), { updated: true, failed: false });
+});
+
+test("a later rejected update remains an error after an earlier committed write", () => {
+  assert.deepEqual(refreshOutcome({
+    toolCalls: [call("first"), call("later")],
+    toolResults: [result("first", true), result("later", false)],
+  }, "row-a"), { updated: true, failed: true });
+});
+
+test("mixed failed and unchanged rows are partial success with visible errors", () => {
+  assert.deepEqual(refreshRunOutcome(3, 1, false), { status: "success", error: "1 of 3 row(s) failed to refresh" });
+});
+
+test("all failed rows and stopped runs are errors, including a stop before dispatch", () => {
+  assert.deepEqual(refreshRunOutcome(3, 3, false), { status: "error", error: "3 of 3 row(s) failed to refresh" });
+  for (const total of [0, 3]) {
+    assert.deepEqual(refreshRunOutcome(total, 0, true), { status: "error", error: "Refresh was stopped" });
+  }
+});
+
+test("empty and successful runs do not fabricate errors", () => {
+  for (const total of [0, 3]) {
+    assert.deepEqual(refreshRunOutcome(total, 0, false), { status: "success", error: undefined });
+  }
 });
 
 test("another row's write and other tools cannot mark the current row updated", () => {

@@ -22,11 +22,26 @@ export function refreshOutcome(
     if (payload.toolName !== "update_row" || args.rowId !== rowId) continue;
     if (payload.isError !== true && object(payload.result).success === true) {
       updated = true;
+      writeFailed = false;
     } else {
       writeFailed = true;
     }
   }
   // A successful retry resolves an earlier write rejection. A stream error
   // remains an error even when a write was already committed.
-  return { updated, failed: Boolean(result.error) || (writeFailed && !updated) };
+  return { updated, failed: Boolean(result.error) || writeFailed };
+}
+
+export function refreshRunOutcome(total: number, errors: number, stopped: boolean): {
+  status: "success" | "error";
+  error?: string;
+} {
+  return {
+    status: stopped || (total > 0 && errors === total) ? "error" : "success",
+    error: stopped
+      ? "Refresh was stopped"
+      : errors > 0
+        ? `${errors} of ${total} row(s) failed to refresh`
+        : undefined,
+  };
 }

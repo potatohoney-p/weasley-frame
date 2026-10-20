@@ -9,7 +9,7 @@ import { RunMetrics } from "../run-metrics.js";
 import { saveRunMetrics } from "../save-run-metrics.js";
 import { getSignal } from "../../abort-registry.js";
 import { processWithConcurrency } from "../../pipeline/concurrency.js";
-import { refreshOutcome } from "../../pipeline/refresh-outcome.js";
+import { refreshOutcome, refreshRunOutcome } from "../../pipeline/refresh-outcome.js";
 
 export const updateInputSchema = datasetContextSchema.extend({
   authContext: authContextSchema,
@@ -209,12 +209,7 @@ ${row.howFound ? `\nPreviously found via: ${row.howFound}` : ""}`;
       // Total failure: every row errored. Partial failure: some rows errored
       // but at least one succeeded — still "success" overall, but the error
       // field records how many failed so partial issues are visible in the data.
-      status: abortSignal?.aborted || (rows.length > 0 && errors === rows.length) ? "error" : "success",
-      error: abortSignal?.aborted
-        ? "Refresh stopped before all rows completed"
-        : errors > 0
-          ? `${errors} of ${rows.length} row(s) failed to refresh`
-          : undefined,
+      ...refreshRunOutcome(rows.length, errors, abortSignal?.aborted ?? false),
       workflowType: "update",
     }).catch((err) =>
       console.error(
