@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "passed": true,
+  "schema_valid": true,
+  "summary": {
+    "rows": 2,
+    "valid_rows": 2,
+    "missing_cells": 0,
+    "unknown_cells": 0,
+    "null_violations": 0,
+    "type_violations": 0,
+    "incomplete_key_rows": 0,
+    "duplicate_identity_groups": 0,
+    "duplicate_rows": 0,
+    "evidence_rows": 2,
+    "evidence_coverage": 1
+  },
+  "issues": []
+}

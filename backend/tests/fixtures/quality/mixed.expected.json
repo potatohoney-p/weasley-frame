@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "passed": false,
+  "schema_valid": true,
+  "summary": {
+    "rows": 3,
+    "valid_rows": 0,
+    "missing_cells": 1,
+    "unknown_cells": 1,
+    "null_violations": 1,
+    "type_violations": 5,
+    "incomplete_key_rows": 1,
+    "duplicate_identity_groups": 1,
+    "duplicate_rows": 2,
+    "evidence_rows": 1,
+    "evidence_coverage": 0.3333333333333333
+  },
+  "issues": [
+    { "code": "type_mismatch", "path": ["rows", 0, "data", "seen_at"], "message": "Expected date." },
+    { "code": "unknown_column", "path": ["rows", 0, "data", "extra"], "message": "Column is not declared in the schema." },
+    { "code": "invalid_source_url", "path": ["rows", 0, "sources", 1], "message": "Expected an absolute HTTP(S) URL without whitespace." },
+    { "code": "null_not_allowed", "path": ["rows", 1, "data", "category"], "message": "Column is not nullable." },
+    { "code": "missing_cell", "path": ["rows", 1, "data", "note"], "message": "Declared column is missing; use explicit null when nullable." },
+    { "code": "missing_source_evidence", "path": ["rows", 1, "sources"], "message": "Row has no syntactically valid HTTP(S) source URL." },
+    { "code": "type_mismatch", "path": ["rows", 2, "data", "revision"], "message": "Expected number." },
+    { "code": "type_mismatch", "path": ["rows", 2, "data", "website"], "message": "Expected url." },
+    { "code": "type_mismatch", "path": ["rows", 2, "data", "active"], "message": "Expected boolean." },
+    { "code": "type_mismatch", "path": ["rows", 2, "data", "note"], "message": "Expected string." },
+    { "code": "incomplete_primary_key", "path": ["rows", 2, "data"], "message": "Every primary-key component must be present, non-null, non-blank, and type-valid." },
+    { "code": "invalid_source_url", "path": ["rows", 2, "sources", 0], "message": "Expected an absolute HTTP(S) URL without whitespace." },
+    { "code": "missing_source_evidence", "path": ["rows", 2, "sources"], "message": "Row has no syntactically valid HTTP(S) source URL." },
+    { "code": "duplicate_identity", "path": ["rows"], "message": "Rows share a complete primary key.", "row_indexes": [0, 1] }
+  ]
+}

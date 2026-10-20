@@ -131,6 +131,26 @@ npm test                 # launcher regression tests
 npm run build            # backend + frontend production builds
 ```
 
+## Offline dataset quality gate
+
+Evaluate a saved snapshot before comparing research runs or accepting a dataset:
+
+```bash
+npm ci --prefix backend --ignore-scripts
+npm run test:quality --prefix backend
+npm run eval:quality --prefix backend -- tests/fixtures/quality/valid.json
+```
+
+The command prints a deterministic JSON report for schema validity, cell types,
+null and key completeness, duplicate identities, and row-level source-URL
+coverage. The synthetic fixtures use reserved `.invalid` domains and require no
+provider keys, running services, or network access during evaluation.
+
+URL syntax and coverage do **not** establish source truth, credibility, live
+availability, or support for a particular cell. See the [backend evaluation
+contract](backend/README.md#offline-dataset-quality-evaluation) for input format,
+exit codes, metric definitions, and limitations.
+
 ## Provider configuration
 
 The local setup screen stores credentials in your OS keychain.
@@ -190,7 +210,10 @@ when a command, environment variable, or architecture boundary changes.
 - Incremental refreshes
 - SQL query support
 - Browser automation for interaction-heavy sources
-- More deterministic schema and source-quality evaluation
+- Deterministic schema and source-quality evaluation: [offline structural and
+  source-URL coverage gate](backend/README.md#offline-dataset-quality-evaluation)
+  available; semantic evidence support, source credibility and live availability
+  evaluation remain future work
 
 ## License
 
