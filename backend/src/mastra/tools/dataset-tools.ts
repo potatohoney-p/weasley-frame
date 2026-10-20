@@ -2,6 +2,8 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { anyApi as internal } from "convex/server";
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { serialize } from "node:v8";
 import { EVENTS } from "../../analytics/events.js";
 import type { AuthContext } from "../workflows/populate.js";
 import {
@@ -11,6 +13,13 @@ import {
 
 type AnalyticsCapture = typeof import("../../analytics/posthog.js").capture;
 type DatasetToolClient = Pick<typeof import("../../convex.js").convex, "query" | "mutation">;
+type PendingWrite = {
+  kind: "insert" | "update";
+  request: Record<string, unknown>;
+  args: Promise<Record<string, unknown>>;
+};
+const MAX_PENDING_WRITES = 32;
+const MAX_RETAINED_WRITE_BYTES = 512 * 1024;
 export interface PopulateToolOptions {
   evidenceRegistry?: EvidenceCaptureRegistry;
   /** Shared with the refresh workflow; advanced only by a confirmed mutation. */
@@ -173,6 +182,42 @@ export function buildPopulateTools(
   if (options.evidenceRegistry && options.evidenceRegistry.runId !== authContext.workflowRunId) {
     throw new Error("Evidence registry belongs to a different workflow run");
   }
+  // Retain only unresolved operations within this factory's lifetime. A retry
+  // must not choose a new operation ID or read a newer revision after a lost
+  // response. Reservation precedes async preparation so concurrent identical
+  // calls share the same initial read as well as the same mutation arguments.
+  const pendingWrites = new Set<PendingWrite>();
+  const prepareWrite = (
+    kind: PendingWrite["kind"],
+    request: Record<string, unknown>,
+    prepare: (snapshot: Record<string, unknown>) => Promise<Record<string, unknown>>,
+  ): PendingWrite => {
+    if (serialize(request).byteLength > MAX_RETAINED_WRITE_BYTES) {
+      throw new Error("Retained write size limit exceeded (512 KiB)");
+    }
+    const snapshot = structuredClone(request);
+    const existing = [...pendingWrites].find(
+      pending => pending.kind === kind && isDeepStrictEqual(pending.request, snapshot),
+    );
+    if (existing) return existing;
+    if (pendingWrites.size >= MAX_PENDING_WRITES) {
+      throw new Error("Unresolved write limit reached (32). Retry an existing unresolved write before starting another.");
+    }
+    const pending: PendingWrite = {
+      kind,
+      request: snapshot,
+      args: Promise.resolve()
+        .then(() => prepare(structuredClone(snapshot)))
+        .then(args => structuredClone(args))
+        .catch(error => {
+          // No mutation was dispatched when preparation fails.
+          pendingWrites.delete(pending);
+          throw error;
+        }),
+    };
+    pendingWrites.add(pending);
+    return pending;
+  };
 
   const insertRowTool = createTool({
     id: "insert_row",
@@ -208,17 +253,23 @@ export function buildPopulateTools(
         const cleanedData = cleanDataKeys(data);
         const cellEvidence = resolveEvidence(cleanedData, cell_evidence, options.evidenceRegistry);
         const convex = await client();
-        assertActive();
-        const rowId = await convex.mutation(internal.datasetRows.insert, {
-          datasetId: authorizedDatasetId,
+        const pending = prepareWrite("insert", {
           data: cleanedData,
-          operationId: randomUUID(),
           ...(cellEvidence !== undefined ? { cellEvidence } : {}),
           ...(sources !== undefined ? { sources } : {}),
           ...(row_summary !== undefined ? { rowSummary: row_summary } : {}),
           ...(how_found !== undefined ? { howFound: how_found } : {}),
-        });
-        return { success: true, ...(typeof rowId === "string" ? { rowId } : {}) };
+        }, async snapshot => ({
+          ...snapshot, datasetId: authorizedDatasetId, operationId: randomUUID(),
+        }));
+        const args = await pending.args;
+        assertActive();
+        const rowId = await convex.mutation(internal.datasetRows.insert, structuredClone(args));
+        if (typeof rowId !== "string" || !rowId.trim()) {
+          return { success: false, error: "Write outcome unconfirmed: persistence did not return a row ID. The row may have been written." };
+        }
+        pendingWrites.delete(pending);
+        return { success: true, rowId };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[insert_row] Failed: ${logCtx} err=${msg}`);
@@ -347,24 +398,33 @@ export function buildPopulateTools(
         const cleanedData = cleanDataKeys(data);
         const cellEvidence = resolveEvidence(cleanedData, cell_evidence, options.evidenceRegistry);
         const convex = await client();
-        const row = await convex.query(internal.datasetRows.get, { id: rowId });
-        if (!row || row.datasetId !== authorizedDatasetId) throw new Error("Row not found");
-        const expectedRevision = options.refreshRow?.revision ?? row.revision ?? 0;
-        assertActive();
-        const result = await convex.mutation(internal.datasetRows.update, {
+        const pending = prepareWrite("update", {
           id: rowId,
-          expectedDatasetId: authorizedDatasetId,
-          expectedRevision,
-          operationId: randomUUID(),
           data: cleanedData,
           ...(cellEvidence !== undefined ? { cellEvidence } : {}),
           ...(sources !== undefined ? { sources } : {}),
           ...(row_summary !== undefined ? { rowSummary: row_summary } : {}),
           ...(how_found !== undefined ? { howFound: how_found } : {}),
+        }, async snapshot => {
+          const refreshRevision = options.refreshRow?.revision;
+          const row = await convex.query(internal.datasetRows.get, { id: rowId });
+          if (!row || row.datasetId !== authorizedDatasetId) throw new Error("Row not found");
+          return {
+            ...snapshot,
+            expectedDatasetId: authorizedDatasetId,
+            expectedRevision: refreshRevision ?? row.revision ?? 0,
+            operationId: randomUUID(),
+          };
         });
+        const args = await pending.args;
+        assertActive();
+        const result = await convex.mutation(internal.datasetRows.update, structuredClone(args));
         if (result && typeof result.dataChanged === "boolean" &&
           typeof result.evidenceChanged === "boolean" && Number.isSafeInteger(result.revision) && result.revision >= 0) {
-          if (options.refreshRow) options.refreshRow.revision = result.revision;
+          pendingWrites.delete(pending);
+          if (options.refreshRow) {
+            options.refreshRow.revision = Math.max(options.refreshRow.revision, result.revision);
+          }
           return {
             success: true, dataChanged: result.dataChanged, evidenceChanged: result.evidenceChanged,
             revision: result.revision,

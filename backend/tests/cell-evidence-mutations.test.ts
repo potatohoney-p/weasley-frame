@@ -82,6 +82,15 @@ test("unsupported legacy data remains writable but cannot retain or receive a ca
   assert.deepEqual(state.writes, []);
 });
 
+test("unchanged large or special scalar values do not fabricate changed-row counts", async () => {
+  const state = fixture({ value: "x".repeat(20000), special: NaN });
+  const result = await invoke("update", state, updateArgs({
+    value: "x".repeat(20000), special: NaN,
+  }));
+  assert.equal(result.dataChanged, false);
+  assert.equal(state.writes.some((write) => write.table === "datasetHistory"), false);
+});
+
 test("captured evidence validates actual columns and bounded source fields before any write", async (t) => {
   const invalid = [
     { absent: [source()] },

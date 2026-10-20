@@ -64,4 +64,3 @@ export function invoke(name: keyof typeof mutations, state: ReturnType<typeof fi
   assert.equal(typeof mutation?._handler, "function", `${name} must expose a Convex handler`);
   return mutation._handler(state.ctx, args);
 }
-

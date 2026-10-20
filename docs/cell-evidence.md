@@ -35,6 +35,9 @@ eventually consistent evidence write.
 
 - Unchanged values preserve their current evidence unless fresh evidence is
   supplied. Typed equality distinguishes `0`, `"0"`, `false`, null and absence.
+  Evidence bindings support bounded finite JSON-like values. Identical legacy
+  scalar values are no-ops; unsupported or oversized complex values are
+  conservatively treated as changed and cannot acquire evidence.
 - Changed values without new evidence lose their old binding. Removing a
   column from a full-row update removes its evidence. A row deletion removes
   its inline evidence; a late update cannot recreate the deleted row.
@@ -54,6 +57,14 @@ eventually consistent evidence write.
   An insert retry returns the retained creation record's row ID without
   overwriting later edits. Deleting the row also removes that creation record;
   insert deduplication does not survive deletion.
+- A tool instance retains the exact prepared arguments of an unconfirmed write,
+  including its operation ID and initial revision. Identical retries reuse them
+  after a lost response, so they cannot silently overwrite an intervening edit.
+  Confirmed responses release the entry, allowing a later intentional write.
+  This in-memory journal holds at most 32 unresolved operations and rejects
+  logical requests larger than 512 KiB in Node's serialized representation.
+  It does not survive an agent or process restart. Delayed responses cannot
+  move the shared refresh revision backward.
 
 The existing application has no general column-rename or computed-transform
 mutation. The tested transformations are its actual tool-key normalization and
@@ -90,11 +101,12 @@ is deleted. Legacy row links are labeled separately from cell evidence.
 
 ## Validation scope
 
-Install both locked dependency sets and run:
+Install the locked backend dependencies and the frontend manifest dependencies,
+as in the existing release workflow, then run:
 
 ```bash
 npm ci --ignore-scripts --prefix backend
-npm ci --ignore-scripts --prefix frontend
+npm install --ignore-scripts --package-lock=false --prefix frontend
 npm test
 npm run test:backend
 npm run build --prefix backend
@@ -108,3 +120,7 @@ handler behavior and write ordering; they do not prove live Convex transaction
 rollback, deployed authorization, or compatibility of an existing running stack.
 Those integration checks require a separately permitted local stack and Convex
 function deployment.
+
+The frontend currently does not track an npm lockfile, so its dependency
+resolution is not pinned by these checks. This feature does not change the
+repository's package-manager policy.

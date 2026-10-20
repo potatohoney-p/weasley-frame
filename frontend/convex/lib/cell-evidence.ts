@@ -226,8 +226,9 @@ export function evidenceEqual(
   return leftKey !== null && leftKey === canonicalKey(right ?? {}, MAX_OPERATION_KEY_LENGTH);
 }
 
-/** Conservative for unsupported values: never mistake changed data for a no-op. */
+/** Scalar equality does not depend on the smaller evidence-binding size limit. */
 export function cellValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
   const leftKey = cellValueKey(left);
   return leftKey !== null && leftKey === cellValueKey(right);
 }

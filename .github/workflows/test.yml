@@ -19,7 +19,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm ci --ignore-scripts --prefix backend
-      - run: npm ci --ignore-scripts --prefix frontend
+      # Frontend follows the existing release install; it does not track an npm lockfile.
+      - run: npm install --ignore-scripts --package-lock=false --prefix frontend
       - run: npm test
       - run: npm run test:backend
       - run: npm run build --prefix backend
