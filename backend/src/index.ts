@@ -424,6 +424,7 @@ async function runScheduledUpdateWorkflowInBackground({
     await convex.mutation(internal.datasets.completeScheduledRefreshInternal, {
       id: datasetId,
       now: Date.now(),
+      runId: run.runId,
     });
   } catch (err) {
     const lastStatusError = statusErrorMessage(err);
@@ -433,6 +434,7 @@ async function runScheduledUpdateWorkflowInBackground({
       await convex.mutation(internal.datasets.failScheduledRefreshInternal, {
         id: datasetId,
         now: Date.now(),
+        runId: run.runId,
         lastStatusError,
       });
     } catch (statusErr) {

@@ -192,6 +192,7 @@ export const beginPopulateInternal = internalMutation({
     await ctx.db.patch(dataset._id, {
       status: "building",
       lastStatusError: undefined,
+      lastRefreshStartedAt: undefined,
     });
     return { outcome: "started" as const };
   },
@@ -220,6 +221,7 @@ export const beginUpdateInternal = internalMutation({
     await ctx.db.patch(dataset._id, {
       status: "updating",
       lastStatusError: undefined,
+      lastRefreshStartedAt: undefined,
     });
     return { outcome: "started" as const };
   },
@@ -289,14 +291,24 @@ export const claimScheduledRefreshInternal = internalMutation({
   },
 });
 
+function isCurrentScheduledRun(dataset: Doc<"datasets">, runId: string): boolean {
+  // The start timestamp is the active marker; keep the last run ID for history.
+  // Check inside the terminal mutation so stale reclaim and finalization serialize.
+  return dataset.status === "updating" &&
+    dataset.lastRefreshStartedAt !== undefined &&
+    dataset.lastRefreshRunId === runId;
+}
+
 export const completeScheduledRefreshInternal = internalMutation({
   args: {
     id: v.id("datasets"),
     now: v.number(),
+    runId: v.string(),
   },
   handler: async (ctx, args) => {
     const dataset = await ctx.db.get(args.id);
     if (!dataset) return { outcome: "not_found" as const };
+    if (!isCurrentScheduledRun(dataset, args.runId)) return { outcome: "stale_run" as const };
 
     const refreshCadence = dataset.refreshCadence ?? "manual";
     await ctx.db.patch(dataset._id, {
@@ -314,11 +326,13 @@ export const failScheduledRefreshInternal = internalMutation({
   args: {
     id: v.id("datasets"),
     now: v.number(),
+    runId: v.string(),
     lastStatusError: v.string(),
   },
   handler: async (ctx, args) => {
     const dataset = await ctx.db.get(args.id);
     if (!dataset) return { outcome: "not_found" as const };
+    if (!isCurrentScheduledRun(dataset, args.runId)) return { outcome: "stale_run" as const };
 
     const refreshCadence = dataset.refreshCadence ?? "manual";
     await ctx.db.patch(dataset._id, {
@@ -337,7 +351,8 @@ export const failScheduledRefreshInternal = internalMutation({
  *
  * No authz check — the backend has already verified ownership before
  * reaching here (or is acting as the system on behalf of a scheduled
- * run). This mutation is purely a controlled patch on the `status` field.
+ * run). A non-scheduled transition also ends any active scheduled claim;
+ * scheduled completion and failure must use the run-aware mutations above.
  *
  * Lifecycle today:
  *   - "paused"   : default for newly created datasets before first run
@@ -365,6 +380,7 @@ export const setStatusInternal = internalMutation({
     await ctx.db.patch(args.id, {
       status: args.status,
       lastStatusError: args.status === "failed" ? args.lastStatusError : undefined,
+      lastRefreshStartedAt: undefined,
     });
   },
 });
@@ -541,7 +557,10 @@ export const updateStatus = mutation({
   },
   handler: async (ctx, args) => {
     const dataset = await loadOwnedDataset(ctx, args.id);
-    await ctx.db.patch(dataset._id, { status: args.status });
+    await ctx.db.patch(dataset._id, {
+      status: args.status,
+      lastRefreshStartedAt: undefined,
+    });
   },
 });
 
