@@ -615,12 +615,20 @@ function startLocalRefreshScheduler(
         },
       );
 
-      for (const dueDataset of dueDatasets as Array<{ _id: string }>) {
+      for (const dueDataset of dueDatasets as Array<{ _id: string; ownerId: string }>) {
         let run: UpdateWorkflowRun;
+        let modelConfig: Awaited<ReturnType<typeof import("./config/models.js").getModelConfig>>;
         try {
+          // Prepare before claiming: a failed settings read must not leave a
+          // busy dataset with no runner, or prevent later batch items starting.
+          const { getModelConfig } = await import("./config/models.js");
+          modelConfig = await getModelConfig(dueDataset.ownerId);
           run = await updateWorkflow.createRun();
         } catch (runErr) {
-          logger.error(runErr, "Failed to create scheduled update workflow run");
+          logger.error(
+            { err: runErr, datasetId: dueDataset._id },
+            "Failed to prepare scheduled update workflow run",
+          );
           continue;
         }
 
@@ -643,8 +651,6 @@ function startLocalRefreshScheduler(
         }
 
         const dataset = claim.dataset;
-        const { getModelConfig } = await import("./config/models.js");
-        const modelConfig = await getModelConfig(dataset.ownerId);
 
         void runScheduledUpdateWorkflowInBackground({
           input: {
