@@ -231,17 +231,23 @@ async function finaliseRunAsLive({
 
   await setDatasetPopulateStatus(datasetId, "live");
 
-  const rowCount = await convex.query(internal.datasetRows.countByDataset, { datasetId });
-  if (workflowType === "update" || rowCount > 0) {
-    await sendDatasetReadyNotification({
-      logger,
-      clerk,
-      userId: authorizedUserId,
-      datasetId,
-      datasetName: currentDataset.name,
-      rowCount,
-      workflowType,
-    });
+  // The terminal write succeeded. Notification preparation is best-effort and
+  // must not enter the caller's failed-finalization fallback after this point.
+  try {
+    const rowCount = await convex.query(internal.datasetRows.countByDataset, { datasetId });
+    if (workflowType === "update" || rowCount > 0) {
+      await sendDatasetReadyNotification({
+        logger,
+        clerk,
+        userId: authorizedUserId,
+        datasetId,
+        datasetName: currentDataset.name,
+        rowCount,
+        workflowType,
+      });
+    }
+  } catch (notifyErr) {
+    logger.error({ err: notifyErr, datasetId }, "Stopped run is live; ready notification could not be completed");
   }
 }
 
@@ -319,19 +325,25 @@ async function runUpdateWorkflowInBackground({
 
     await setDatasetPopulateStatus(datasetId, "live");
 
-    const rowCount = await convex.query(
-      internal.datasetRows.countByDataset,
-      { datasetId },
-    );
-    await sendDatasetReadyNotification({
-      logger,
-      clerk,
-      userId: authorizedUserId,
-      datasetId,
-      datasetName: currentDataset.name,
-      rowCount,
-      workflowType: "update",
-    });
+    // A failed count/email must not roll back an acknowledged successful run.
+    // Another request may already have claimed a new run after the live write.
+    try {
+      const rowCount = await convex.query(
+        internal.datasetRows.countByDataset,
+        { datasetId },
+      );
+      await sendDatasetReadyNotification({
+        logger,
+        clerk,
+        userId: authorizedUserId,
+        datasetId,
+        datasetName: currentDataset.name,
+        rowCount,
+        workflowType: "update",
+      });
+    } catch (notifyErr) {
+      logger.error({ err: notifyErr, datasetId }, "Update is live; ready notification could not be completed");
+    }
   } catch (err) {
     // Note: a user-triggered stop is NOT handled here. The update workflow's
     // refreshRowsStep detects the abort internally, clears pending row

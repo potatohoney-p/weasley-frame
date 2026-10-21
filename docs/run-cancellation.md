@@ -46,3 +46,32 @@ process-local. This is cancellation-registry ownership, not per-run fencing of
 Convex writes: an old runner's delayed error path can still write a failed status
 after another run starts. Distributed run leases, status-write fencing, and
 startup-claim recovery are separate concerns.
+
+## A successful terminal write is not undone by notification failure
+
+After a manual update or stopped populate has acknowledged its `live` status
+write, row-count reads and ready notifications are best-effort. Their errors are
+logged without entering the workflow-failure handler or issuing a later `failed`
+write. Otherwise a temporary count-query failure could mark completed work as
+failed and overwrite the status of a successor that has already started.
+
+This does not suppress workflow errors or rejected terminal writes: those still
+use the existing failure/fallback paths. The stopped-populate policy is unchanged:
+zero rows are allowed but no ready email is sent; stopped updates may notify with
+zero rows. No notification retry or guaranteed delivery is introduced.
+
+`backend/tests/terminal-notification.test.ts` compiles the production runner
+declarations with synthetic database/notification I/O. Fourteen tests cover
+post-live read/send errors with and without a successor, terminal-write rejection,
+and the zero/nonzero row notification policy. Eight regressions fail on the prior
+implementation. Run it with:
+
+```sh
+cd backend
+node --import tsx --test tests/terminal-notification.test.ts
+```
+
+This boundary begins only after the status-write promise resolves successfully.
+A write that commits remotely and then rejects locally is still an uncertain
+outcome, not handled by this change. Global per-run status fencing, live Convex
+transaction semantics, HTTP/auth and multi-process recovery remain unverified.
