@@ -12,6 +12,19 @@ import {
 
 const DEFAULT_MAX_DATASET_ROWS = 100;
 
+/** Keep identity comparison consistent across inserts and updates. */
+function primaryKeysMatch(
+  columns: Array<{ name: string }>,
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): boolean {
+  return columns.length > 0 && columns.every(({ name }) =>
+    left[name] !== undefined && left[name] !== "" &&
+    right[name] !== undefined && right[name] !== "" &&
+    String(left[name]).toLowerCase() === String(right[name]).toLowerCase(),
+  );
+}
+
 /** Omitted metadata is distinct from an explicit replacement in retry payloads. */
 function writePayload(args: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
@@ -147,20 +160,9 @@ export const insert = internalMutation({
         .withIndex("by_dataset", (q) => q.eq("datasetId", args.datasetId))
         .collect();
 
-      const isDuplicate = existingRows.some((existing) => {
-        const existingData = existing.data as Record<string, unknown>;
-        return pkColumns.every((pk: { name: string }) => {
-          const newVal = args.data[pk.name];
-          const existingVal = existingData[pk.name];
-          return (
-            newVal !== undefined &&
-            newVal !== "" &&
-            existingVal !== undefined &&
-            existingVal !== "" &&
-            String(newVal).toLowerCase() === String(existingVal).toLowerCase()
-          );
-        });
-      });
+      const isDuplicate = existingRows.some((existing) =>
+        primaryKeysMatch(pkColumns, args.data, existing.data),
+      );
 
       if (isDuplicate) {
         const pkDesc = pkColumns
@@ -260,6 +262,20 @@ export const update = internalMutation({
       evidenceChanged: !evidenceEqual(existing.cellEvidence, cellEvidence),
       revision,
     };
+
+    // A refresh can change identity as well as other fields. Check peer rows in
+    // this same mutation, after replay/revision validation but before any writes.
+    const dataset = await ctx.db.get(args.expectedDatasetId);
+    if (!dataset) throw new Error("Dataset not found");
+    const pkColumns = dataset.columns.filter((column) => column.isPrimaryKey);
+    if (pkColumns.length > 0) {
+      const peers = await ctx.db.query("datasetRows")
+        .withIndex("by_dataset", (q) => q.eq("datasetId", args.expectedDatasetId))
+        .collect();
+      if (peers.some((peer) => peer._id !== args.id && primaryKeysMatch(pkColumns, newData, peer.data))) {
+        throw new Error("Duplicate: another row with these primary key values already exists. Update rejected.");
+      }
+    }
 
     // Accepted evidence-only updates still charge once, like any existing update.
     // Replays and rejected evidence/revisions have returned before this boundary.
