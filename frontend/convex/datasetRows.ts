@@ -291,6 +291,8 @@ export const update = internalMutation({
           columnName: key,
           oldValue: String(oldVal ?? ""),
           newValue: String(newVal ?? ""),
+          oldCell: { present: Object.hasOwn(oldData, key), valueKey: cellValueKey(oldVal) },
+          newCell: { present: Object.hasOwn(newData, key), valueKey: cellValueKey(newVal) },
           changedAt: Date.now(),
         });
       }

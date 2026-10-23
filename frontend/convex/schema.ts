@@ -110,6 +110,9 @@ export default defineSchema({
     columnName: v.string(),
     oldValue: v.string(),
     newValue: v.string(),
+    // Optional for legacy history; null keys mean unrepresentable, not null cells.
+    oldCell: v.optional(v.object({ present: v.boolean(), valueKey: v.union(v.string(), v.null()) })),
+    newCell: v.optional(v.object({ present: v.boolean(), valueKey: v.union(v.string(), v.null()) })),
     changedAt: v.number(),
   }).index("by_row", ["datasetRowId"]),
 
