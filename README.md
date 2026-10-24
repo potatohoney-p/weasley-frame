@@ -210,6 +210,10 @@ Run cleanup is controller-owned, so a completed runner cannot remove the Stop
 signal for a newer run while waiting for its final notification or status
 response. See [the repeated-run cancellation contract](docs/run-cancellation.md).
 
+Populate also rejects resolved stream errors and records stopped agent attempts
+as errors, while retaining observed usage and the existing partial-results
+lifecycle. See [populate completion integrity](docs/populate-completion.md).
+
 ### Captured cell evidence
 
 The cell drawer shows column-specific excerpts captured by the research tools,

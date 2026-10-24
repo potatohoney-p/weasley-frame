@@ -245,28 +245,38 @@ const agentStep = createStep({
     const startedAt = Date.now();
     let status: "success" | "error" = "success";
     let errorMsg: string | undefined;
+    // Keep the signal owned by this step, including across credential awaits.
+    const abortSignal = getSignal(inputData.authorizedDatasetId);
 
     try {
+      abortSignal?.throwIfAborted();
+      const apiKey = await requireOpenRouterApiKey();
+      abortSignal?.throwIfAborted();
       const agent = buildPopulateAgent(
         inputData.authorizedDatasetId,
         inputData.authContext,
         inputData.columns,
-        await requireOpenRouterApiKey(),
+        apiKey,
         inputData.maxRowCount,
         metrics,
       );
-      const abortSignal = getSignal(inputData.authorizedDatasetId);
       const result = await agent.generate(inputData.prompt, { abortSignal, maxSteps: 80 });
       metrics.addOrchestratorResult(result);
       // Use result.toolCalls (flat accumulated list) — same reasoning as investigate-tool.ts.
       metrics.countToolCalls(result.toolCalls ?? []);
+      // Mastra may resolve with a stream error or partial output after abort.
+      // Retain observed usage, but never turn either case into successful work.
+      abortSignal?.throwIfAborted();
+      if (result.error) {
+        throw result.error instanceof Error ? result.error : new Error(String(result.error));
+      }
       return { text: result.text };
     } catch (err) {
       status = "error";
       // Label user-initiated stops clearly in runStats; treat spurious network
       // AbortErrors (signal not fired) as regular failures so the error message
       // doesn't mislead operators into thinking the user pressed Stop.
-      if (err instanceof Error && err.name === "AbortError" && getSignal(inputData.authorizedDatasetId)?.aborted) {
+      if (abortSignal?.aborted) {
         errorMsg = "Stopped by user";
       } else {
         errorMsg = err instanceof Error ? err.message : String(err);
