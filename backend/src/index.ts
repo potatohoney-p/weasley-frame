@@ -1180,6 +1180,27 @@ await fastify.register(async (instance) => {
         return reply.code(401).send({ error: "Authentication required" });
       }
 
+      // Prepare before claiming. A settings/import/read failure must not leave
+      // an active dataset with no runner. This read is only a preflight; the
+      // atomic claim below rechecks ownership and status after these awaits.
+      const dataset = await convex.query(internal.datasets.getInternal, {
+        id: parsed.data.datasetId,
+      });
+      if (!dataset) {
+        return reply.code(404).send({ error: "Dataset not found" });
+      }
+      if (dataset.ownerId !== auth.userId) {
+        return reply.code(403).send({ error: "Not authorized to populate this dataset" });
+      }
+      if (dataset.status === "building") {
+        return reply.code(409).send({ error: "Dataset is being populated" });
+      }
+      if (dataset.status === "updating") {
+        return reply.code(409).send({ error: "Dataset is already being updated" });
+      }
+      const { getModelConfig } = await import("./config/models.js");
+      const modelConfig = await getModelConfig(auth.userId);
+
       const populateOutcome = await beginDatasetPopulate(
         parsed.data.datasetId,
         auth.userId,
@@ -1194,19 +1215,12 @@ await fastify.register(async (instance) => {
       if (populateOutcome === "already_building") {
         return reply.code(409).send({ error: "Dataset is already being populated" });
       }
+      if (populateOutcome === "already_updating") {
+        return reply.code(409).send({ error: "Dataset is already being updated" });
+      }
       if (populateOutcome !== "started") {
         throw new Error(`Unexpected populate claim outcome: ${populateOutcome}`);
       }
-
-      const dataset = await convex.query(internal.datasets.getInternal, {
-        id: parsed.data.datasetId,
-      });
-      if (!dataset) {
-        return reply.code(404).send({ error: "Dataset not found" });
-      }
-
-      const { getModelConfig } = await import("./config/models.js");
-      const modelConfig = await getModelConfig(auth.userId);
 
       let run: Awaited<ReturnType<typeof populateWorkflow.createRun>>;
       try {
@@ -1263,6 +1277,27 @@ await fastify.register(async (instance) => {
         return reply.code(401).send({ error: "Authentication required" });
       }
 
+      // Prepare before claiming. A settings/import/read failure must not leave
+      // an active dataset with no runner. This read is only a preflight; the
+      // atomic claim below rechecks ownership and status after these awaits.
+      const dataset = await convex.query(internal.datasets.getInternal, {
+        id: parsed.data.datasetId,
+      });
+      if (!dataset) {
+        return reply.code(404).send({ error: "Dataset not found" });
+      }
+      if (dataset.ownerId !== auth.userId) {
+        return reply.code(403).send({ error: "Not authorized to update this dataset" });
+      }
+      if (dataset.status === "building") {
+        return reply.code(409).send({ error: "Dataset is being populated" });
+      }
+      if (dataset.status === "updating") {
+        return reply.code(409).send({ error: "Dataset is already being updated" });
+      }
+      const { getModelConfig } = await import("./config/models.js");
+      const modelConfig = await getModelConfig(auth.userId);
+
       const updateOutcome = await beginDatasetUpdate(
         parsed.data.datasetId,
         auth.userId,
@@ -1292,9 +1327,6 @@ await fastify.register(async (instance) => {
         await setDatasetPopulateStatus(parsed.data.datasetId, "live");
         return reply.code(502).send({ error: "Failed to update dataset. Please try again." });
       }
-
-      const { getModelConfig } = await import("./config/models.js");
-      const modelConfig = await getModelConfig(auth.userId);
 
       // Register before void-ing so the abort-registry entry is visible the
       // instant the 202 is sent, closing the TOCTOU window where a /stop

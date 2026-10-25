@@ -232,3 +232,7 @@ exercise the actual Convex handlers and render the cell drawer.
 
 Copyright 2026 Weasley Contributors. Released under the
 [Apache License 2.0](LICENSE). Third-party dependencies retain their own licenses.
+
+Manual populate/update requests prepare read-only context and model settings
+before claiming a dataset, so a settings outage does not strand it as active.
+See [manual startup guarantees and limits](docs/manual-startup.md).
