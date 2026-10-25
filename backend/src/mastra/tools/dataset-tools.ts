@@ -22,6 +22,8 @@ const MAX_PENDING_WRITES = 32;
 const MAX_RETAINED_WRITE_BYTES = 512 * 1024;
 export interface PopulateToolOptions {
   evidenceRegistry?: EvidenceCaptureRegistry;
+  /** Server-owned receipt set; only acknowledged insert row IDs are added. */
+  confirmedInsertIds?: Set<string>;
   /** Shared with the refresh workflow; advanced only by a confirmed mutation. */
   refreshRow?: { id: string; revision: number };
   abortSignal?: AbortSignal;
@@ -269,6 +271,7 @@ export function buildPopulateTools(
           return { success: false, error: "Write outcome unconfirmed: persistence did not return a row ID. The row may have been written." };
         }
         pendingWrites.delete(pending);
+        options.confirmedInsertIds?.add(rowId);
         return { success: true, rowId };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

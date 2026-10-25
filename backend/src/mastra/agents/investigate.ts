@@ -60,6 +60,7 @@ export function buildInvestigateAgent(
   columns: PopulateColumn[],
   openRouterApiKey: string,
   abortSignal?: AbortSignal,
+  confirmedInsertIds?: Set<string>,
 ): Agent {
   const modelSlug = authContext.modelConfig!.investigateSubagent;
   const openrouter = createOpenRouter({
@@ -71,7 +72,7 @@ export function buildInvestigateAgent(
   const { insert_row } = buildPopulateTools(
     authorizedDatasetId,
     authContext,
-    { evidenceRegistry, abortSignal },
+    { evidenceRegistry, abortSignal, confirmedInsertIds },
   );
   return new Agent({
     id: "investigate-agent",
