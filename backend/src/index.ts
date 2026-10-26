@@ -1408,6 +1408,9 @@ await fastify.register(async (instance) => {
             { err: statusErr, datasetId: body.datasetId },
             "Failed to force-transition orphaned dataset to failed",
           );
+          // Recovery was not acknowledged. Do not tell the caller Stop
+          // succeeded: cleanup may have failed or the write result is unknown.
+          return reply.code(502).send({ error: "Failed to stop dataset run. Please try again." });
         }
         return reply.code(200).send({ success: true });
       }
