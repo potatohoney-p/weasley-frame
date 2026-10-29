@@ -98,7 +98,42 @@ npx weasley-frame install
 | `weasley-frame path` | Print the managed checkout path |
 
 The updater refuses to touch a modified checkout, so local work is never silently
-overwritten.
+overwritten. It does not stop workers or deploy Convex. Before updating an existing
+installation, follow the coordinated upgrade procedure below.
+
+### Upgrading an existing stack
+
+Backend and Convex changes must be deployed together. New row-write arguments
+(`operationId` and `expectedRevision`) are rejected by old Convex functions, and
+scheduled refresh finalization requires matching versions in **both** directions:
+old backends omit the required `runId`, while old Convex functions reject it.
+
+1. Before `weasley-frame update`, `git pull`, or any edit to watched source,
+   quiesce new manual and scheduled work and let active workers finish against
+   their existing Convex version. Coordinate this manually; the launcher has no
+   drain command. Then stop the local stack with `weasley-frame stop` (managed
+   checkout) or `make down` (source checkout), and ensure no other backend workers
+   still use that Convex instance. These stop commands do not remove the Compose
+   volumes, but are not graceful-drain guarantees. Do not change versions while
+   workers remain active.
+2. Update the stopped checkout. The dev backend bind-mounts `backend/src` and runs
+   `tsx watch`, so changing source while it is running can load the new backend
+   **before** Convex has been upgraded.
+3. Only with explicit authorization to deploy the target instance, deploy the
+   matching Convex schema/functions, then start the matching backend. For the
+   stopped local stack, `weasley-frame start` / `make dev` performs that order.
+   `make dev` does **not** stop an already-running backend first. Separately managed
+   deployments need the same operator-coordinated order; a source update or PR
+   merge alone is not deployment authorization.
+4. Before resuming normal work, verify row insert/update and captured evidence,
+   manual refresh, and scheduled refresh success/failure finalization on the
+   authorized instance. Offline tests do not establish deployed compatibility.
+
+Do not blindly downgrade the Convex schema after new evidence metadata has been
+written. Retain compatible schema/functions or arrange a separately reviewed
+migration and coordinated rollback; an old backend alone is not compatible with
+the new scheduled finalizers. See [cell evidence compatibility](docs/cell-evidence.md#storage-compatibility)
+and [scheduled finalization](docs/scheduled-finalization.md#compatibility-and-deployment).
 
 ## Develop from source
 
