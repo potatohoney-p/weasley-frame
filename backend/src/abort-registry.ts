@@ -8,15 +8,17 @@
  *
  * Keyed by datasetId because:
  *   - The /stop route knows the datasetId (from the request body).
- *   - Convex's atomic claim guarantees at most one active run per dataset,
- *     so datasetId uniquely identifies the in-flight run.
+ *   - Convex's atomic claim gates active work, while completed runners may
+ *     still await notification or persistence responses after a new run starts.
+ *     The entry therefore identifies the latest registered run, not every
+ *     runner whose finally block has yet to finish.
  *   - Workflow steps have authorizedDatasetId in their inputData — no
  *     separate workflowRunId lookup needed.
  *
  * Design notes:
  *   - `abortDataset()` fires the signal but does NOT remove the entry.
- *     The background runner's `finally` block calls `deregisterDataset()`
- *     so the catch block can still read `controller.signal.aborted` to
+ *     The background runner's `finally` block passes its own controller to
+ *     `deregisterDataset()` so the catch block can still read `controller.signal.aborted` to
  *     distinguish a user stop from a genuine failure.
  *   - All operations are synchronous and safe within a single Node.js process.
  */
@@ -47,7 +49,13 @@ export function abortDataset(datasetId: string): boolean {
   return true;
 }
 
-/** Remove a dataset from the registry. Call in the background runner's finally block. */
-export function deregisterDataset(datasetId: string): void {
-  controllers.delete(datasetId);
+/**
+ * Release only this run's registration. A previous runner can finish notification
+ * or receive a delayed status response after its successor has registered.
+ * Its cleanup must never remove the successor's cancellation signal.
+ * Returns false when already released or superseded by another controller.
+ */
+export function deregisterDataset(datasetId: string, controller: AbortController): boolean {
+  if (controllers.get(datasetId) !== controller) return false;
+  return controllers.delete(datasetId);
 }

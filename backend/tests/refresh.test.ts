@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { processWithConcurrency } from "../src/pipeline/concurrency.js";
-import { refreshOutcome, refreshRunOutcome } from "../src/pipeline/refresh-outcome.js";
+import { finishRefreshObservation, refreshOutcome, refreshRunOutcome } from "../src/pipeline/refresh-outcome.js";
 
 function deferred() {
   let resolve!: () => void;
@@ -163,4 +163,38 @@ test("partial stream failures retain confirmed writes while reporting the error"
 
 test("malformed or absent result chunks do not throw or fabricate success", () => {
   assert.deepEqual(refreshOutcome({ toolCalls: [null], toolResults: [null, {}, { payload: null }, result("missing", true)] }, "row-a"), { updated: false, failed: false });
+});
+
+test("an evidence-only observation does not count as a data update", () => {
+  const evidence = result("observed", true, { result: { success: true, dataChanged: false, evidenceChanged: true } });
+  assert.deepEqual(refreshOutcome({
+    toolCalls: [call("observed")], toolResults: [evidence],
+  }, "row-a"), { updated: false, failed: false });
+  assert.deepEqual(refreshOutcome({
+    toolCalls: [call("changed"), call("observed")],
+    toolResults: [result("changed", true), evidence],
+  }, "row-a"), { updated: true, failed: false });
+});
+
+test("completed attempts persist observation state without inventing changed data", async () => {
+  let completed = 0;
+  assert.deepEqual(await finishRefreshObservation({}, "row-a", undefined, async () => { completed++; }),
+    { updated: false, failed: false });
+  assert.equal(completed, 1);
+});
+
+test("cancellation and rejected writes do not advance observation state", async () => {
+  const finish = async () => assert.fail("observation advanced");
+  await finishRefreshObservation({}, "row-a", AbortSignal.abort(), finish);
+  await finishRefreshObservation({ error: new Error("stream closed") }, "row-a", undefined, finish);
+  await finishRefreshObservation({
+    toolCalls: [call("write")], toolResults: [result("write", false)],
+  }, "row-a", undefined, finish);
+});
+
+test("a stale completion rejection preserves confirmed changes and reports failure", async () => {
+  assert.deepEqual(await finishRefreshObservation({
+    toolCalls: [call("write")], toolResults: [result("write", true)],
+  }, "row-a", undefined, async () => { throw new Error("stale revision"); }),
+  { updated: true, failed: true });
 });

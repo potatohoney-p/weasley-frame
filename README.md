@@ -128,9 +128,29 @@ make convex-push         # deploy changes under frontend/convex
 make seed-public-datasets
 make down                # stop without deleting data
 npm test                 # launcher regression tests
-npm run test:backend     # offline refresh cancellation + write-result regressions
+npm run test:backend     # offline lifecycle, refresh, capture and cell-view regressions
 npm run build            # backend + frontend production builds
 ```
+
+## Offline dataset quality gate
+
+Evaluate a saved snapshot before comparing research runs or accepting a dataset:
+
+```bash
+npm ci --prefix backend --ignore-scripts
+npm run test:quality --prefix backend
+npm run eval:quality --prefix backend -- tests/fixtures/quality/valid.json
+```
+
+The command prints a deterministic JSON report for schema validity, cell types,
+null and key completeness, duplicate identities, and row-level source-URL
+coverage. The synthetic fixtures use reserved `.invalid` domains and require no
+provider keys, running services, or network access during evaluation.
+
+URL syntax and coverage do **not** establish source truth, credibility, live
+availability, or support for a particular cell. See the [backend evaluation
+contract](backend/README.md#offline-dataset-quality-evaluation) for input format,
+exit codes, metric definitions, and limitations.
 
 ## Provider configuration
 
@@ -187,11 +207,14 @@ when a command, environment variable, or architecture boundary changes.
 
 ## Roadmap
 
-- Per-cell provenance views
+- Extended provenance history and derived-value lineage
 - Incremental refreshes
 - SQL query support
 - Browser automation for interaction-heavy sources
-- More deterministic schema and source-quality evaluation
+- Deterministic schema and source-quality evaluation: [offline structural and
+  source-URL coverage gate](backend/README.md#offline-dataset-quality-evaluation)
+  available; semantic evidence support, source credibility and live availability
+  evaluation remain future work
 
 ### Refresh correctness
 
@@ -206,7 +229,33 @@ Run `npm run test:backend` after installing backend dependencies to verify these
 dispatch and outcome decisions offline, without credentials or model calls.
 Live workflow and Convex persistence checks require the supported local stack.
 
+Run cleanup is controller-owned, so a completed runner cannot remove the Stop
+signal for a newer run while waiting for its final notification or status
+response. See [the repeated-run cancellation contract](docs/run-cancellation.md).
+
+Populate also rejects resolved stream errors and records stopped agent attempts
+as errors, while retaining observed usage and the existing partial-results
+lifecycle. See [populate completion integrity](docs/populate-completion.md).
+
+### Captured cell evidence
+
+The cell drawer shows column-specific excerpts captured by the research tools,
+with source URL, page/snippet kind and capture time. Changed values invalidate
+old evidence; unchanged values can record fresh observations without increasing
+the changed-row count. Legacy row links remain separate and do not imply that a
+particular cell has captured support.
+
+This records observed source text, not factual correctness. See
+[the capture, retry and compatibility contract](docs/cell-evidence.md) for
+storage bounds, mutation behavior and offline verification limits. Backend
+regressions now require both frontend and backend dependencies because they
+exercise the actual Convex handlers and render the cell drawer.
+
 ## License
 
 Copyright 2026 Weasley Contributors. Released under the
 [Apache License 2.0](LICENSE). Third-party dependencies retain their own licenses.
+
+Manual populate/update requests prepare read-only context and model settings
+before claiming a dataset, so a settings outage does not strand it as active.
+See [manual startup guarantees and limits](docs/manual-startup.md).

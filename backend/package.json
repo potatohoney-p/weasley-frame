@@ -15,6 +15,9 @@
                     "dev":  "node ../scripts/with-root-env.mjs tsx watch src/index.ts",
                     "build":  "tsc",
                     "test": "node --import tsx --test tests/*.test.ts",
+                    "build:quality": "tsc --project tsconfig.quality.json",
+                    "test:quality": "tsx --test tests/dataset-quality.test.ts",
+                    "eval:quality": "tsx src/evaluation/cli.ts",
                     "start":  "node ../scripts/with-root-env.mjs node dist/index.js",
                     "mastra:dev":  "node ../scripts/with-root-env.mjs mastra dev"
                 },

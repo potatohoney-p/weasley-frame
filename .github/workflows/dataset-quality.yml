@@ -1,0 +1,29 @@
+name: Dataset quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  offline-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci --prefix backend --ignore-scripts --no-audit --no-fund
+      - name: Compile evaluator, schema dependency and tests
+        run: npm run build:quality --prefix backend
+      - name: Run offline corpus and CLI tests
+        run: npm run test:quality --prefix backend
+      - name: Run launcher regression tests
+        run: npm test

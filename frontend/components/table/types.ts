@@ -1,4 +1,7 @@
 import type { RefreshCadence } from "@/lib/refresh-cadence";
+import type { CellEvidence } from "@/convex/lib/cell-evidence";
+
+export type { CapturedEvidence, CellEvidence } from "@/convex/lib/cell-evidence";
 
 export type ColumnType = "text" | "number" | "boolean" | "url" | "date";
 
@@ -30,4 +33,11 @@ export interface DatasetRow {
   data: Record<string, unknown>;
   sources?: string[];
   updateStatus?: "pending";
+  cellEvidence?: Record<string, CellEvidence>;
+  revision?: number;
+  lastEvidenceRefresh?: {
+    runId: string;
+    completedAt: number;
+    observedColumns: string[];
+  };
 }

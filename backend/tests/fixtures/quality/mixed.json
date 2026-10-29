@@ -1,0 +1,32 @@
+{
+  "schema": {
+    "dataset_name": "synthetic_projects",
+    "description": "Synthetic offline quality fixtures; no real research claims.",
+    "columns": [
+      { "name": "id", "display_name": "ID", "type": "string", "is_primary_key": true, "is_enumerable": true, "retrieval_hint": "", "nullable": false },
+      { "name": "revision", "display_name": "Revision", "type": "number", "is_primary_key": true, "is_enumerable": true, "retrieval_hint": "", "nullable": false },
+      { "name": "website", "display_name": "Website", "type": "url", "is_primary_key": false, "is_enumerable": false, "retrieval_hint": "", "nullable": false },
+      { "name": "seen_at", "display_name": "Seen at", "type": "date", "is_primary_key": false, "is_enumerable": false, "retrieval_hint": "", "nullable": false },
+      { "name": "active", "display_name": "Active", "type": "boolean", "is_primary_key": false, "is_enumerable": false, "retrieval_hint": "", "nullable": false },
+      { "name": "category", "display_name": "Category", "type": "enum", "is_primary_key": false, "is_enumerable": false, "retrieval_hint": "", "nullable": false },
+      { "name": "note", "display_name": "Note", "type": "string", "is_primary_key": false, "is_enumerable": false, "retrieval_hint": "", "nullable": true }
+    ],
+    "primary_key": ["id", "revision"],
+    "retrieval_strategy": "search_fetch",
+    "source_hint": "https://example.invalid/catalog"
+  },
+  "rows": [
+    {
+      "data": { "id": "demo", "revision": 0, "website": "https://example.invalid/one", "seen_at": "2026-02-30", "active": false, "category": "research", "note": null, "extra": "unknown column" },
+      "sources": ["https://example.invalid/evidence/one", "not a URL"]
+    },
+    {
+      "data": { "id": "demo", "revision": 0, "website": "https://example.invalid/two", "seen_at": "2026-10-20", "active": false, "category": null },
+      "sources": []
+    },
+    {
+      "data": { "id": " ", "revision": "0", "website": "/relative", "seen_at": "2024-02-29T23:15:00+09:00", "active": "false", "category": "demo", "note": 42 },
+      "sources": ["ftp://example.invalid/evidence"]
+    }
+  ]
+}
