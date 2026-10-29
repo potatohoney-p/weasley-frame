@@ -21,7 +21,9 @@ export function refreshOutcome(
     const args = object(payload.args ?? call?.args);
     if (payload.toolName !== "update_row" || args.rowId !== rowId) continue;
     if (payload.isError !== true && object(payload.result).success === true) {
-      updated = true;
+      // Older tools had no change flag. Evidence-only writes explicitly return
+      // false; once any data write committed, later observations cannot erase it.
+      updated ||= object(payload.result).dataChanged !== false;
       writeFailed = false;
     } else {
       writeFailed = true;
@@ -44,4 +46,21 @@ export function refreshRunOutcome(total: number, errors: number, stopped: boolea
         ? `${errors} of ${total} row(s) failed to refresh`
         : undefined,
   };
+}
+
+/** A failed observation write must not erase an already confirmed data write. */
+export async function finishRefreshObservation(
+  result: Parameters<typeof refreshOutcome>[0],
+  rowId: string,
+  signal: AbortSignal | undefined,
+  complete: () => Promise<unknown>,
+): Promise<{ updated: boolean; failed: boolean }> {
+  const outcome = refreshOutcome(result, rowId);
+  if (outcome.failed || signal?.aborted) return outcome;
+  try {
+    await complete();
+    return outcome;
+  } catch {
+    return { ...outcome, failed: true };
+  }
 }

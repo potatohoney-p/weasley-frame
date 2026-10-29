@@ -231,17 +231,23 @@ async function finaliseRunAsLive({
 
   await setDatasetPopulateStatus(datasetId, "live");
 
-  const rowCount = await convex.query(internal.datasetRows.countByDataset, { datasetId });
-  if (workflowType === "update" || rowCount > 0) {
-    await sendDatasetReadyNotification({
-      logger,
-      clerk,
-      userId: authorizedUserId,
-      datasetId,
-      datasetName: currentDataset.name,
-      rowCount,
-      workflowType,
-    });
+  // The terminal write succeeded. Notification preparation is best-effort and
+  // must not enter the caller's failed-finalization fallback after this point.
+  try {
+    const rowCount = await convex.query(internal.datasetRows.countByDataset, { datasetId });
+    if (workflowType === "update" || rowCount > 0) {
+      await sendDatasetReadyNotification({
+        logger,
+        clerk,
+        userId: authorizedUserId,
+        datasetId,
+        datasetName: currentDataset.name,
+        rowCount,
+        workflowType,
+      });
+    }
+  } catch (notifyErr) {
+    logger.error({ err: notifyErr, datasetId }, "Stopped run is live; ready notification could not be completed");
   }
 }
 
@@ -259,6 +265,7 @@ async function beginDatasetUpdate(
 async function runUpdateWorkflowInBackground({
   input,
   run,
+  controller,
   authorizedUserId,
   logger,
   clerk,
@@ -266,6 +273,7 @@ async function runUpdateWorkflowInBackground({
 }: {
   input: DatasetContext;
   run: UpdateWorkflowRun;
+  controller: AbortController;
   authorizedUserId: string;
   logger: FastifyBaseLogger;
   clerk: ClerkClient;
@@ -317,19 +325,25 @@ async function runUpdateWorkflowInBackground({
 
     await setDatasetPopulateStatus(datasetId, "live");
 
-    const rowCount = await convex.query(
-      internal.datasetRows.countByDataset,
-      { datasetId },
-    );
-    await sendDatasetReadyNotification({
-      logger,
-      clerk,
-      userId: authorizedUserId,
-      datasetId,
-      datasetName: currentDataset.name,
-      rowCount,
-      workflowType: "update",
-    });
+    // A failed count/email must not roll back an acknowledged successful run.
+    // Another request may already have claimed a new run after the live write.
+    try {
+      const rowCount = await convex.query(
+        internal.datasetRows.countByDataset,
+        { datasetId },
+      );
+      await sendDatasetReadyNotification({
+        logger,
+        clerk,
+        userId: authorizedUserId,
+        datasetId,
+        datasetName: currentDataset.name,
+        rowCount,
+        workflowType: "update",
+      });
+    } catch (notifyErr) {
+      logger.error({ err: notifyErr, datasetId }, "Update is live; ready notification could not be completed");
+    }
   } catch (err) {
     // Note: a user-triggered stop is NOT handled here. The update workflow's
     // refreshRowsStep detects the abort internally, clears pending row
@@ -358,7 +372,7 @@ async function runUpdateWorkflowInBackground({
       );
     }
   } finally {
-    deregisterDataset(datasetId);
+    deregisterDataset(datasetId, controller);
   }
 }
 
@@ -380,7 +394,7 @@ async function runScheduledUpdateWorkflowInBackground({
   };
 }): Promise<void> {
   const datasetId = input.datasetId;
-  registerDataset(datasetId);
+  const controller = registerDataset(datasetId);
 
   try {
     const result = await run.start({
@@ -410,6 +424,7 @@ async function runScheduledUpdateWorkflowInBackground({
     await convex.mutation(internal.datasets.completeScheduledRefreshInternal, {
       id: datasetId,
       now: Date.now(),
+      runId: run.runId,
     });
   } catch (err) {
     const lastStatusError = statusErrorMessage(err);
@@ -419,6 +434,7 @@ async function runScheduledUpdateWorkflowInBackground({
       await convex.mutation(internal.datasets.failScheduledRefreshInternal, {
         id: datasetId,
         now: Date.now(),
+        runId: run.runId,
         lastStatusError,
       });
     } catch (statusErr) {
@@ -428,7 +444,7 @@ async function runScheduledUpdateWorkflowInBackground({
       );
     }
   } finally {
-    deregisterDataset(datasetId);
+    deregisterDataset(datasetId, controller);
   }
 }
 
@@ -553,7 +569,7 @@ async function runPopulateWorkflowInBackground({
       );
     }
   } finally {
-    deregisterDataset(datasetId);
+    deregisterDataset(datasetId, controller);
   }
 }
 
@@ -601,12 +617,20 @@ function startLocalRefreshScheduler(
         },
       );
 
-      for (const dueDataset of dueDatasets as Array<{ _id: string }>) {
+      for (const dueDataset of dueDatasets as Array<{ _id: string; ownerId: string }>) {
         let run: UpdateWorkflowRun;
+        let modelConfig: Awaited<ReturnType<typeof import("./config/models.js").getModelConfig>>;
         try {
+          // Prepare before claiming: a failed settings read must not leave a
+          // busy dataset with no runner, or prevent later batch items starting.
+          const { getModelConfig } = await import("./config/models.js");
+          modelConfig = await getModelConfig(dueDataset.ownerId);
           run = await updateWorkflow.createRun();
         } catch (runErr) {
-          logger.error(runErr, "Failed to create scheduled update workflow run");
+          logger.error(
+            { err: runErr, datasetId: dueDataset._id },
+            "Failed to prepare scheduled update workflow run",
+          );
           continue;
         }
 
@@ -629,8 +653,6 @@ function startLocalRefreshScheduler(
         }
 
         const dataset = claim.dataset;
-        const { getModelConfig } = await import("./config/models.js");
-        const modelConfig = await getModelConfig(dataset.ownerId);
 
         void runScheduledUpdateWorkflowInBackground({
           input: {
@@ -1158,6 +1180,27 @@ await fastify.register(async (instance) => {
         return reply.code(401).send({ error: "Authentication required" });
       }
 
+      // Prepare before claiming. A settings/import/read failure must not leave
+      // an active dataset with no runner. This read is only a preflight; the
+      // atomic claim below rechecks ownership and status after these awaits.
+      const dataset = await convex.query(internal.datasets.getInternal, {
+        id: parsed.data.datasetId,
+      });
+      if (!dataset) {
+        return reply.code(404).send({ error: "Dataset not found" });
+      }
+      if (dataset.ownerId !== auth.userId) {
+        return reply.code(403).send({ error: "Not authorized to populate this dataset" });
+      }
+      if (dataset.status === "building") {
+        return reply.code(409).send({ error: "Dataset is being populated" });
+      }
+      if (dataset.status === "updating") {
+        return reply.code(409).send({ error: "Dataset is already being updated" });
+      }
+      const { getModelConfig } = await import("./config/models.js");
+      const modelConfig = await getModelConfig(auth.userId);
+
       const populateOutcome = await beginDatasetPopulate(
         parsed.data.datasetId,
         auth.userId,
@@ -1172,19 +1215,12 @@ await fastify.register(async (instance) => {
       if (populateOutcome === "already_building") {
         return reply.code(409).send({ error: "Dataset is already being populated" });
       }
+      if (populateOutcome === "already_updating") {
+        return reply.code(409).send({ error: "Dataset is already being updated" });
+      }
       if (populateOutcome !== "started") {
         throw new Error(`Unexpected populate claim outcome: ${populateOutcome}`);
       }
-
-      const dataset = await convex.query(internal.datasets.getInternal, {
-        id: parsed.data.datasetId,
-      });
-      if (!dataset) {
-        return reply.code(404).send({ error: "Dataset not found" });
-      }
-
-      const { getModelConfig } = await import("./config/models.js");
-      const modelConfig = await getModelConfig(auth.userId);
 
       let run: Awaited<ReturnType<typeof populateWorkflow.createRun>>;
       try {
@@ -1241,6 +1277,27 @@ await fastify.register(async (instance) => {
         return reply.code(401).send({ error: "Authentication required" });
       }
 
+      // Prepare before claiming. A settings/import/read failure must not leave
+      // an active dataset with no runner. This read is only a preflight; the
+      // atomic claim below rechecks ownership and status after these awaits.
+      const dataset = await convex.query(internal.datasets.getInternal, {
+        id: parsed.data.datasetId,
+      });
+      if (!dataset) {
+        return reply.code(404).send({ error: "Dataset not found" });
+      }
+      if (dataset.ownerId !== auth.userId) {
+        return reply.code(403).send({ error: "Not authorized to update this dataset" });
+      }
+      if (dataset.status === "building") {
+        return reply.code(409).send({ error: "Dataset is being populated" });
+      }
+      if (dataset.status === "updating") {
+        return reply.code(409).send({ error: "Dataset is already being updated" });
+      }
+      const { getModelConfig } = await import("./config/models.js");
+      const modelConfig = await getModelConfig(auth.userId);
+
       const updateOutcome = await beginDatasetUpdate(
         parsed.data.datasetId,
         auth.userId,
@@ -1271,18 +1328,16 @@ await fastify.register(async (instance) => {
         return reply.code(502).send({ error: "Failed to update dataset. Please try again." });
       }
 
-      const { getModelConfig } = await import("./config/models.js");
-      const modelConfig = await getModelConfig(auth.userId);
-
       // Register before void-ing so the abort-registry entry is visible the
       // instant the 202 is sent, closing the TOCTOU window where a /stop
       // arriving before registerDataset runs inside the background function
       // would incorrectly force-transition an active run to "failed".
-      registerDataset(parsed.data.datasetId);
+      const controller = registerDataset(parsed.data.datasetId);
 
       void runUpdateWorkflowInBackground({
         input: parsed.data,
         run,
+        controller,
         authorizedUserId: auth.userId,
         logger: req.log,
         clerk: req.server.clerk,
@@ -1353,6 +1408,9 @@ await fastify.register(async (instance) => {
             { err: statusErr, datasetId: body.datasetId },
             "Failed to force-transition orphaned dataset to failed",
           );
+          // Recovery was not acknowledged. Do not tell the caller Stop
+          // succeeded: cleanup may have failed or the write result is unknown.
+          return reply.code(502).send({ error: "Failed to stop dataset run. Please try again." });
         }
         return reply.code(200).send({ success: true });
       }

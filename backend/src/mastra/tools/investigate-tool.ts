@@ -86,6 +86,7 @@ export function buildSubagentTool(
     inputSchema: investigateInputSchema,
     outputSchema: investigateOutputSchema,
     execute: async ({ entity_hint, primary_keys, context, urls, notes }) => {
+      const confirmedInsertIds = new Set<string>();
       try {
         const rowCount = await convex.query(internal.datasetRows.countByDataset, {
           datasetId: authorizedDatasetId,
@@ -104,11 +105,14 @@ export function buildSubagentTool(
           `[run_subagent] spawning subagent user=${authContext.authorizedUserId} run=${authContext.workflowRunId} dataset=${authorizedDatasetId} entity="${entity_hint}" pk=${JSON.stringify(primary_keys)}`,
         );
 
+        const abortSignal = getSignal(authorizedDatasetId);
         const agent = buildInvestigateAgent(
           authorizedDatasetId,
           authContext,
           columns,
           openRouterApiKey,
+          abortSignal,
+          confirmedInsertIds,
         );
 
         const pkBlock = Object.entries(primary_keys)
@@ -130,7 +134,6 @@ ${pkBlock}
 Context (partial data already found):
 ${context}${urlsBlock}${notesBlock}`;
 
-        const abortSignal = getSignal(authorizedDatasetId);
         const result = await agent.generate(prompt, { abortSignal, maxSteps: 25 });
         if (metrics) {
           // Use result.toolCalls (the flat accumulated list across all steps) rather
@@ -144,7 +147,9 @@ ${context}${urlsBlock}${notesBlock}`;
         }
 
         const parsed = parseInvestigateResult(result.text);
-        if (metrics && parsed.inserted) metrics.rowsInserted++;
+        // Generated prose is not evidence of a database write. The receipt
+        // set is private to this invocation and populated by insert_row only.
+        parsed.inserted = confirmedInsertIds.size > 0;
 
         console.log(
           `[run_subagent] done entity="${entity_hint}" inserted=${parsed.inserted} steps=${result.steps?.length ?? "?"} toolCalls=${result.toolCalls?.length ?? "?"}` +
@@ -163,11 +168,15 @@ ${context}${urlsBlock}${notesBlock}`;
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[run_subagent] subagent error entity="${entity_hint}" err=${msg}`);
         return {
-          inserted: false,
-          reason: `Subagent failed: ${msg}`,
+          inserted: confirmedInsertIds.size > 0,
+          reason: `Subagent failed${confirmedInsertIds.size > 0 ? " after confirmed insertion" : ""}: ${msg}`,
           row_summary: undefined,
           clues: undefined,
         };
+      } finally {
+        // Count acknowledged unique rows even if the provider fails after a
+        // write. A lost response remains unconfirmed until a retry succeeds.
+        if (metrics) metrics.rowsInserted += confirmedInsertIds.size;
       }
     },
   });
