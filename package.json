@@ -17,6 +17,7 @@
     "build:release": "node scripts/build-release.mjs",
     "lint": "npm run lint --prefix frontend",
     "test": "node --test tests/*.test.mjs",
+    "test:backend": "npm test --prefix backend",
     "prepublishOnly": "npm test"
   },
   "engines": {

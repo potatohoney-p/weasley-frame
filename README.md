@@ -128,6 +128,7 @@ make convex-push         # deploy changes under frontend/convex
 make seed-public-datasets
 make down                # stop without deleting data
 npm test                 # launcher regression tests
+npm run test:backend     # offline refresh cancellation + write-result regressions
 npm run build            # backend + frontend production builds
 ```
 
@@ -191,6 +192,19 @@ when a command, environment variable, or architecture boundary changes.
 - SQL query support
 - Browser automation for interaction-heavy sources
 - More deterministic schema and source-quality evaluation
+
+### Refresh correctness
+
+Refresh workers stop dispatching queued rows after cancellation and wait for
+in-flight work to finish cleanup. The updated-row count comes from successful
+`update_row` tool results for that row, rather than the model's final summary.
+Rejected writes count as errors; successful retries count the row once. A mixed
+run with errors and unchanged rows remains a partial success, while a stopped
+run is recorded as an error in run metrics.
+
+Run `npm run test:backend` after installing backend dependencies to verify these
+dispatch and outcome decisions offline, without credentials or model calls.
+Live workflow and Convex persistence checks require the supported local stack.
 
 ## License
 
